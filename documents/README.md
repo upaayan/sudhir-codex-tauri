@@ -1,26 +1,15 @@
-# Documentation index
+# Documents
 
-## Local planning and audit history
+- [ARCHITECTURE.md](ARCHITECTURE.md) — terminology, app-server/gateway
+  boundary, process diagrams, the fixed initialize identity, persistence
+  rules, protocol flow, and non-goals.
+- [BUILD-AND-REBUILD.md](BUILD-AND-REBUILD.md) — pinned versions, clean-clone
+  build/test/package commands, live-contract check, icon regeneration, and
+  the rebuild checklist.
+- [DEPLOY-MACOS.md](DEPLOY-MACOS.md) — preflight, artifact inspection,
+  installation, Gatekeeper, smoke test, rollback, removal.
+- [DEPLOY-WINDOWS.md](DEPLOY-WINDOWS.md) — WSL preflight, NSIS install,
+  project-path expectations, real WSL smoke test, rollback, removal.
 
-The complete debate-loop record is kept in
-`plan-audit-implementation/` in the owner's working checkout and is
-intentionally excluded from Git and the public repository. It contains:
-
-- `sudhir_codex_tauri_plan.md`;
-- `sudhir_codex_tauri_audit.md`; and
-- `sudhir_codex_tauri_implementation.md`, created during implementation after
-  owner approval.
-
-## Documents created during implementation
-
-- `ARCHITECTURE.md` — runtime boundary, process lifecycle, protocol flow, and
-  intentionally excluded features
-- `BUILD-AND-REBUILD.md` — clean-clone setup, pinned tools, local builds, tests,
-  protocol maintenance, and GitHub Actions rebuild instructions
-- `DEPLOY-MACOS.md` — macOS artifact verification, installation, smoke test,
-  rollback, and removal
-- `DEPLOY-WINDOWS.md` — Windows/WSL prerequisites, artifact verification,
-  installation, smoke test, rollback, and removal
-
-These four public files are implementation deliverables. The local planning
-documents define their required content before any product code is written.
+The local debate-loop records (plan, audit, implementation) live under
+`documents/plan-audit-implementation/`, which is gitignored and never pushed.

@@ -1,2 +1,10 @@
 # Local debate-loop records
 /documents/plan-audit-implementation/
+
+# Generated and installed dependencies
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+/work/
+.DS_Store
