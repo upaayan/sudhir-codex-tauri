@@ -54,6 +54,23 @@ class MemoryTransport implements RpcTransport {
   }
 }
 
+async function initClient(transport: MemoryTransport, client: RpcClient): Promise<void> {
+  const init = client.initialize();
+  transport.deliver(
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id: JSON.parse(transport.sent[0]!).id,
+      result: {
+        userAgent: "codex/0.1.0",
+        codexHome: "/home/test",
+        platformFamily: "unix",
+        platformOs: "macos",
+      },
+    }),
+  );
+  await init;
+}
+
 // ---------------------------------------------------------------------------
 // Unit tests: correlation, errors, server requests, timeout, close
 // ---------------------------------------------------------------------------
@@ -61,16 +78,17 @@ class MemoryTransport implements RpcTransport {
 test("correlates responses with requests out of order", async () => {
   const transport = new MemoryTransport();
   const client = createRpcClient({ transport });
+  await initClient(transport, client);
   const first = client.request("first", { n: 1 });
   const second = client.request("second", { n: 2 });
 
-  const secondSent = transport.sent[1]!;
+  const secondSent = transport.sent[3]!;
   transport.deliver(
     JSON.stringify({ jsonrpc: "2.0", id: JSON.parse(secondSent).id, result: "second-result" }),
   );
   assert.equal(await second, "second-result");
 
-  const firstSent = transport.sent[0]!;
+  const firstSent = transport.sent[2]!;
   transport.deliver(
     JSON.stringify({ jsonrpc: "2.0", id: JSON.parse(firstSent).id, result: "first-result" }),
   );
@@ -81,8 +99,9 @@ test("correlates responses with requests out of order", async () => {
 test("rejects with RpcError when the server returns an error", async () => {
   const transport = new MemoryTransport();
   const client = createRpcClient({ transport });
+  await initClient(transport, client);
   const request = client.request("thread/list", {});
-  const sent = JSON.parse(transport.sent[0]!);
+  const sent = JSON.parse(transport.sent[2]!);
   transport.deliver(
     JSON.stringify({
       jsonrpc: "2.0",
@@ -191,6 +210,7 @@ test("unsupported server request gets an error response and an event", async () 
 test("rejects pending requests on timeout", async () => {
   const transport = new MemoryTransport();
   const client = createRpcClient({ transport, timeoutMs: 25 });
+  await initClient(transport, client);
   const request = client.request("thread/list", {});
   await assert.rejects(request, /timed out/);
   client.close();
@@ -199,6 +219,7 @@ test("rejects pending requests on timeout", async () => {
 test("close rejects pending requests and refuses new ones", async () => {
   const transport = new MemoryTransport();
   const client = createRpcClient({ transport });
+  await initClient(transport, client);
   const request = client.request("thread/list", {});
   client.close();
   await assert.rejects(request, /closed/);
@@ -645,7 +666,7 @@ test("integration: unknown item notification lands in a fallback entry without c
     __control: "sendNotification",
     method: "item/started",
     params: {
-      item: { newHarmlessItem: { id: "new-1", note: "future" } },
+      item: { type: "newHarmlessItem", id: "new-1", note: "future" },
       threadId: "thread-1",
       turnId: "turn-9",
       startedAtMs: 1,
@@ -654,7 +675,8 @@ test("integration: unknown item notification lands in a fallback entry without c
   await waitForState((s) =>
     s.threadsBy["thread-1"]?.entries.some(
       (e) => e.kind !== "unsupportedRequest" &&
-        (e.item as Record<string, { id?: string }>).newHarmlessItem?.id === "new-1",
+        (e.item as { type?: string }).type === "newHarmlessItem" &&
+        e.item.id === "new-1",
     ) === true,
   );
 });

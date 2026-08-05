@@ -12,7 +12,6 @@ use tokio::sync::Mutex as AsyncMutex;
 use crate::platform;
 
 const MESSAGE_EVENT: &str = "app-server://message";
-const DIAGNOSTIC_EVENT: &str = "app-server://diagnostic";
 const EXIT_EVENT: &str = "app-server://exit";
 
 /// Bounded recent-diagnostic buffer for startup/runtime errors. Not a logging
@@ -119,18 +118,13 @@ impl AppServerProcess {
                         if let Some(value) = classify_stdout_line(trimmed) {
                             let _ = app_for_stdout.emit(MESSAGE_EVENT, value);
                         } else {
-                            push_diagnostic(
-                                &diagnostics_for_stdout,
-                                trimmed.to_string(),
-                                &app_for_stdout,
-                            );
+                            push_diagnostic(&diagnostics_for_stdout, trimmed.to_string());
                         }
                     }
                 }
             }
         });
 
-        let app_for_stderr = app.clone();
         let diagnostics_for_stderr = Arc::clone(&diagnostics);
         tauri::async_runtime::spawn(async move {
             let mut reader = BufReader::new(stderr);
@@ -142,11 +136,7 @@ impl AppServerProcess {
                     Ok(_) => {
                         let trimmed = line.trim_end_matches(['\r', '\n']);
                         if !trimmed.is_empty() {
-                            push_diagnostic(
-                                &diagnostics_for_stderr,
-                                trimmed.to_string(),
-                                &app_for_stderr,
-                            );
+                            push_diagnostic(&diagnostics_for_stderr, trimmed.to_string());
                         }
                     }
                 }
@@ -199,11 +189,10 @@ impl AppServerProcess {
     }
 }
 
-fn push_diagnostic(buffer: &Arc<Mutex<DiagnosticBuffer>>, line: String, app: &AppHandle) {
+fn push_diagnostic(buffer: &Arc<Mutex<DiagnosticBuffer>>, line: String) {
     if let Ok(mut buffer) = buffer.lock() {
         buffer.push(line.clone());
     }
-    let _ = app.emit(DIAGNOSTIC_EVENT, line);
 }
 
 #[cfg(test)]

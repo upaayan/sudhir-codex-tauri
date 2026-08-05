@@ -30,7 +30,6 @@ import { ProjectThreadSidebar } from "./components/project-thread-sidebar.tsx";
 import { UsagePanel } from "./components/usage-panel.tsx";
 
 const MESSAGE_EVENT = "app-server://message";
-const DIAGNOSTIC_EVENT = "app-server://diagnostic";
 const EXIT_EVENT = "app-server://exit";
 
 export function App() {
@@ -86,7 +85,6 @@ export function App() {
 
   useEffect(() => {
     let unlistenMessage: UnlistenFn | undefined;
-    let unlistenDiagnostic: UnlistenFn | undefined;
     let unlistenExit: UnlistenFn | undefined;
     let disposed = false;
 
@@ -162,13 +160,6 @@ export function App() {
     }
 
     async function start() {
-      unlistenDiagnostic = await listen<string>(DIAGNOSTIC_EVENT, (event) => {
-        dispatch({
-          type: "connection/status",
-          connected: true,
-          diagnostic: event.payload,
-        });
-      });
       unlistenExit = await listen<number>(EXIT_EVENT, async (event) => {
         const diagnostic = await invoke<string>("app_server_diagnostic").catch(() => "");
         dispatch({
@@ -217,7 +208,6 @@ export function App() {
     return () => {
       disposed = true;
       unlistenMessage?.();
-      unlistenDiagnostic?.();
       unlistenExit?.();
       rpcRef.current?.close();
       rpcRef.current = null;
@@ -396,7 +386,7 @@ export function App() {
           />
         ))}
         <ChatComposer
-          disabled={!state.connected || busy}
+          disabled={!state.connected || busy || !state.selectedThreadId}
           busy={busy}
           onSend={handleSend}
           onInterrupt={handleInterrupt}

@@ -40,6 +40,14 @@ interface PendingRequest {
   timer: ReturnType<typeof setTimeout>;
 }
 
+interface QueuedRequest {
+  method: string;
+  params?: unknown;
+  timeoutMs?: number;
+  resolve: (result: unknown) => void;
+  reject: (error: Error) => void;
+}
+
 export class RpcError extends Error {
   code: number;
   data: unknown;
@@ -52,7 +60,9 @@ export class RpcError extends Error {
   }
 }
 
-const DEFAULT_TIMEOUT_MS = 60_000;
+// Thread creation and resume can wait on plugin/MCP startup, and a turn can
+// legitimately run for minutes; 180s keeps the client out of the way.
+const DEFAULT_TIMEOUT_MS = 180_000;
 
 export class RpcClient {
   private readonly transport: RpcTransport;
@@ -69,7 +79,9 @@ export class RpcClient {
   private readonly unsubscribe: () => void;
   private nextId = 1;
   private readonly pending = new Map<string | number, PendingRequest>();
+  private readonly preInitQueue: QueuedRequest[] = [];
   private closed = false;
+  private initialized = false;
 
   constructor(options: RpcClientOptions) {
     this.transport = options.transport;
@@ -85,6 +97,13 @@ export class RpcClient {
   request(method: string, params?: unknown, timeoutMs?: number): Promise<unknown> {
     if (this.closed) {
       return Promise.reject(new Error("RPC client is closed"));
+    }
+    if (!this.initialized && method !== "initialize") {
+      // The app-server rejects every request that arrives before
+      // `initialize` completes. Queue them and flush after the handshake.
+      return new Promise((resolve, reject) => {
+        this.preInitQueue.push({ method, params, timeoutMs, resolve, reject });
+      });
     }
     const id = this.nextId;
     this.nextId += 1;
@@ -126,6 +145,14 @@ export class RpcClient {
       },
     );
     this.notify("initialized");
+    this.initialized = true;
+    const queued = this.preInitQueue.splice(0);
+    for (const entry of queued) {
+      this.request(entry.method, entry.params, entry.timeoutMs).then(
+        entry.resolve,
+        entry.reject,
+      );
+    }
     return response as InitializeResponse;
   }
 
@@ -140,6 +167,10 @@ export class RpcClient {
       pending.reject(new Error("RPC client closed"));
       this.pending.delete(id);
     }
+    for (const entry of this.preInitQueue) {
+      entry.reject(new Error("RPC client closed"));
+    }
+    this.preInitQueue.length = 0;
   }
 
   private sendLine(message: unknown): void {

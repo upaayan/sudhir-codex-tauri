@@ -142,18 +142,16 @@ function resumeThread(threadId) {
         id: "turn-history-1",
         items: [
           {
-            userMessage: {
-              id: "item-history-1",
-              clientId: null,
-              content: [{ type: "text", text: "hello from history" }],
-            },
+            type: "userMessage",
+            id: "item-history-1",
+            clientId: null,
+            content: [{ type: "text", text: "hello from history" }],
           },
           {
-            agentMessage: {
-              id: "item-history-2",
-              text: "A persisted response.",
-              phase: null,
-            },
+            type: "agentMessage",
+            id: "item-history-2",
+            text: "A persisted response.",
+            phase: null,
           },
         ],
         itemsView: "full",
@@ -282,7 +280,7 @@ function scheduleStream(threadId, turnId) {
       jsonrpc: "2.0",
       method: "item/started",
       params: {
-        item: { agentMessage: { id: `item-${turnId}`, text: "", phase: null } },
+        item: { type: "agentMessage", id: `item-${turnId}`, text: "", phase: null },
         threadId,
         turnId,
         startedAtMs: Date.now(),
@@ -309,11 +307,10 @@ function scheduleStream(threadId, turnId) {
       method: "item/completed",
       params: {
         item: {
-          agentMessage: {
-            id: `item-${turnId}`,
-            text: "Hello from the fake server.",
-            phase: null,
-          },
+          type: "agentMessage",
+          id: `item-${turnId}`,
+          text: "Hello from the fake server.",
+          phase: null,
         },
         threadId,
         turnId,

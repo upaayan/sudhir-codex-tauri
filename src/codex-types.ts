@@ -242,21 +242,122 @@ export interface AccountTokenUsageDailyBucket {
 // Items
 // ---------------------------------------------------------------------------
 
-// The backend serializes ThreadItem as an externally tagged enum, so the wire
-// shape is `{ "userMessage": {...} }`, `{ "commandExecution": {...} }`, etc.
-export type ThreadItem = { userMessage: UserMessageItem } |
-  { agentMessage: AgentMessageItem } | { reasoning: ReasoningItem } |
-  { commandExecution: CommandExecutionItem } | { fileChange: FileChangeItem } |
-  { webSearch: WebSearchItem } | { mcpToolCall: McpToolCallItem } |
-  { contextCompaction: ContextCompactionItem } |
-  { enteredReviewMode: EnteredReviewModeItem } |
-  { exitedReviewMode: ExitedReviewModeItem } |
-  { collabAgentToolCall: CollabAgentToolCallItem } | { sleep: SleepItem } |
-  { imageGeneration: ImageGenerationItem };
+// The backend serializes ThreadItem with `#[serde(tag = "type")]`
+// (app-server-protocol/src/protocol/v2/item.rs:118), so every item is
+// `{ type: "<kind>", ...fields }`. Unknown kinds are preserved verbatim and
+// rendered through a compact fallback card.
+export interface UserMessageItem {
+  type: "userMessage";
+  id: string;
+  clientId?: string | null;
+  content: UserInput[];
+}
 
-// Wire items whose kind is not yet known to this client. They are preserved
-// verbatim and rendered through a compact fallback card.
-export type UnknownThreadItem = { [key: string]: unknown };
+export interface AgentMessageItem {
+  type: "agentMessage";
+  id: string;
+  text: string;
+  phase?: string | null;
+}
+
+export interface ReasoningItem {
+  type: "reasoning";
+  id: string;
+  summary: string[];
+  content: string[];
+}
+
+export interface CommandExecutionItem {
+  type: "commandExecution";
+  id: string;
+  command: string;
+  cwd: string;
+  processId?: string | null;
+  source?: string;
+  status: CommandExecutionStatus;
+  commandActions?: unknown[];
+  aggregatedOutput?: string | null;
+  exitCode?: number | null;
+  durationMs?: number | null;
+}
+
+export interface FileChangeItem {
+  type: "fileChange";
+  id: string;
+  changes: FileUpdateChange[];
+  status: PatchApplyStatus;
+}
+
+export interface WebSearchItem {
+  type: "webSearch";
+  id: string;
+  status: string;
+  query?: string | null;
+  results?: unknown[];
+}
+
+export interface McpToolCallItem {
+  type: "mcpToolCall";
+  id: string;
+  server: string;
+  tool: string;
+  status: string;
+  arguments: JsonValue;
+  result?: unknown;
+  error?: { message?: string } | null;
+  durationMs?: number | null;
+}
+
+export interface ContextCompactionItem {
+  type: "contextCompaction";
+  id: string;
+}
+
+export interface EnteredReviewModeItem {
+  type: "enteredReviewMode";
+  id: string;
+  review: string;
+}
+
+export interface ExitedReviewModeItem {
+  type: "exitedReviewMode";
+  id: string;
+  review: string;
+}
+
+export interface CollabAgentToolCallItem {
+  type: "collabAgentToolCall";
+  id: string;
+  tool: string;
+  status: string;
+  senderThreadId: string;
+  receiverThreadIds: string[];
+  prompt?: string | null;
+  model?: string | null;
+}
+
+export interface SleepItem {
+  type: "sleep";
+  id: string;
+  durationMs?: number | null;
+  reason?: string | null;
+}
+
+export interface ImageGenerationItem {
+  type: "imageGeneration";
+  id: string;
+  status: string;
+  images?: unknown[];
+  error?: { message?: string } | null;
+}
+
+export type ThreadItem = UserMessageItem | AgentMessageItem | ReasoningItem |
+  CommandExecutionItem | FileChangeItem | WebSearchItem | McpToolCallItem |
+  ContextCompactionItem | EnteredReviewModeItem | ExitedReviewModeItem |
+  CollabAgentToolCallItem | SleepItem | ImageGenerationItem | UnknownThreadItem;
+
+// Wire items whose kind is not yet known to this client.
+export type UnknownThreadItem = { type: string; id: string; [key: string]: unknown };
 
 // The backend serializes UserInput with `#[serde(tag = "type")]`, so every
 // input carries a `type` discriminator.
@@ -269,39 +370,12 @@ export type UserInput =
   | { type: "skill"; name: string; path: string }
   | { type: "mention"; name: string; path: string };
 
-export interface UserMessageItem extends ItemBase {
-  clientId?: string | null;
-  content: UserInput[];
-}
-
-export interface AgentMessageItem extends ItemBase {
-  text: string;
-  phase?: string | null;
-}
-
-export interface ReasoningItem extends ItemBase {
-  summary: string[];
-  content: string[];
-}
-
 export type CommandExecutionStatus =
   | "inProgress"
   | "completed"
   | "failed"
   | "cancelled"
   | string;
-
-export interface CommandExecutionItem extends ItemBase {
-  command: string;
-  cwd: string;
-  processId?: string | null;
-  source?: string;
-  status: CommandExecutionStatus;
-  commandActions?: unknown[];
-  aggregatedOutput?: string | null;
-  exitCode?: number | null;
-  durationMs?: number | null;
-}
 
 export interface FileUpdateChange {
   path: string;
@@ -315,62 +389,6 @@ export type PatchApplyStatus =
   | "failed"
   | "cancelled"
   | string;
-
-export interface FileChangeItem extends ItemBase {
-  changes: FileUpdateChange[];
-  status: PatchApplyStatus;
-}
-
-export interface WebSearchItem extends ItemBase {
-  status: string;
-  query?: string | null;
-  results?: unknown[];
-}
-
-export interface McpToolCallItem extends ItemBase {
-  server: string;
-  tool: string;
-  status: string;
-  arguments: JsonValue;
-  result?: unknown;
-  error?: { message?: string } | null;
-  durationMs?: number | null;
-}
-
-export interface ContextCompactionItem extends ItemBase {
-}
-
-export interface EnteredReviewModeItem extends ItemBase {
-  review: string;
-}
-
-export interface ExitedReviewModeItem extends ItemBase {
-  review: string;
-}
-
-export interface CollabAgentToolCallItem extends ItemBase {
-  tool: string;
-  status: string;
-  senderThreadId: string;
-  receiverThreadIds: string[];
-  prompt?: string | null;
-  model?: string | null;
-}
-
-export interface SleepItem extends ItemBase {
-  durationMs?: number | null;
-  reason?: string | null;
-}
-
-export interface ImageGenerationItem extends ItemBase {
-  status: string;
-  images?: unknown[];
-  error?: { message?: string } | null;
-}
-
-interface ItemBase {
-  id: string;
-}
 
 export type KnownItemKind =
   | "userMessage"
@@ -404,23 +422,18 @@ export type ThreadItemPayload<K extends KnownItemKind> = {
 }[K];
 
 export function itemKind(item: ThreadItem): string {
-  const keys = Object.keys(item);
-  return keys.length > 0 ? keys[0]! : "unknown";
+  return item.type ?? "unknown";
 }
 
 export function itemId(item: ThreadItem): string {
-  const first = Object.values(item)[0];
-  if (first && typeof first === "object" && "id" in first) {
-    return String((first as { id: unknown }).id);
-  }
-  return "<unknown>";
+  return item.id;
 }
 
 export function itemPayload<K extends KnownItemKind>(
   item: ThreadItem,
   kind: K,
-): ThreadItemPayload<K> {
-  return (item as Record<string, unknown>)[kind] as ThreadItemPayload<K>;
+): ThreadItemPayload<K> | undefined {
+  return item.type === kind ? (item as ThreadItemPayload<K>) : undefined;
 }
 
 export function isItemKind(item: ThreadItem, kind: KnownItemKind): boolean {

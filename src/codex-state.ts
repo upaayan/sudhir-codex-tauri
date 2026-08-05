@@ -16,6 +16,7 @@ import type {
   ItemStartedNotification,
   Model,
   RateLimitWindow,
+  ReasoningItem,
   ReasoningSummaryPartAddedNotification,
   ReasoningSummaryTextDeltaNotification,
   Thread,
@@ -199,11 +200,7 @@ export function findEntry(
 }
 
 function entryKey(item: ThreadItem): string {
-  const first = Object.values(item)[0];
-  if (first && typeof first === "object" && "id" in first) {
-    return String((first as { id: string }).id);
-  }
-  return "<unknown>";
+  return item.id;
 }
 
 function applyItemDelta(
@@ -223,68 +220,56 @@ function applyItemDelta(
 }
 
 function appendAgentDelta(item: ThreadItem, delta: string): ThreadItem {
-  const first = Object.values(item)[0];
-  if (first && typeof first === "object" && "text" in first) {
+  if (item.type === "agentMessage") {
     return {
       ...item,
-      agentMessage: { ...first as { id: string; text: string }, text: first.text + delta },
-    } as ThreadItem;
+      text: item.text + delta,
+    };
   }
   return item;
 }
 
 function appendCommandDelta(item: ThreadItem, delta: string): ThreadItem {
-  const first = Object.values(item)[0];
-  if (first && typeof first === "object" && "aggregatedOutput" in first) {
-    const current = first as { id: string; aggregatedOutput?: string | null };
+  if (item.type === "commandExecution") {
     return {
       ...item,
-      commandExecution: {
-        ...current,
-        aggregatedOutput: (current.aggregatedOutput ?? "") + delta,
-      },
-    } as ThreadItem;
+      aggregatedOutput: (item.aggregatedOutput ?? "") + delta,
+    };
   }
   return item;
 }
 
 function appendReasoningDelta(item: ThreadItem, delta: string, summaryIndex: number): ThreadItem {
-  const first = Object.values(item)[0];
-  if (first && typeof first === "object" && "summary" in first) {
-    const current = first as { id: string; summary: string[] };
-    const summary = [...current.summary];
+  if (item.type === "reasoning") {
+    const reasoning = item as ReasoningItem;
+    const summary = [...reasoning.summary];
     summary[summaryIndex] = (summary[summaryIndex] ?? "") + delta;
-    return { ...item, reasoning: { ...current, summary } } as ThreadItem;
+    return { ...item, summary };
   }
   return item;
 }
 
 function addReasoningPart(item: ThreadItem, summaryIndex: number): ThreadItem {
-  const first = Object.values(item)[0];
-  if (first && typeof first === "object" && "summary" in first) {
-    const current = first as { id: string; summary: string[] };
-    const summary = [...current.summary];
+  if (item.type === "reasoning") {
+    const reasoning = item as ReasoningItem;
+    const summary = [...reasoning.summary];
     while (summary.length <= summaryIndex) {
       summary.push("");
     }
-    return { ...item, reasoning: { ...current, summary } } as ThreadItem;
+    return { ...item, summary };
   }
   return item;
 }
 
 function replaceChanges(item: ThreadItem, changes: FileUpdateChange[]): ThreadItem {
-  const first = Object.values(item)[0];
-  if (first && typeof first === "object" && "changes" in first) {
-    return {
-      ...item,
-      fileChange: { ...first as { id: string }, changes },
-    } as ThreadItem;
+  if (item.type === "fileChange") {
+    return { ...item, changes };
   }
   return item;
 }
 
 function itemKindOf(item: ThreadItem): string {
-  return Object.keys(item).find((key) => key !== "id") ?? "unknown";
+  return item.type ?? "unknown";
 }
 
 // ---------------------------------------------------------------------------
@@ -627,15 +612,9 @@ function mergeItem(existing: ThreadItem, completed: ThreadItem): ThreadItem {
   if (kind !== completedKind) {
     return completed;
   }
-  const existingPayload = Object.values(existing)[0] as unknown as Record<string, unknown>;
-  const completedPayload = Object.values(completed)[0] as unknown as Record<string, unknown>;
-  return {
-    [kind]: {
-      ...existingPayload,
-      ...completedPayload,
-      id: existingPayload.id,
-    },
-  } as ThreadItem;
+  // The completed item is authoritative; keep the existing item's id so the
+  // entry identity (and delta accumulation) stays stable.
+  return { ...completed, id: existing.id };
 }
 
 // ---------------------------------------------------------------------------

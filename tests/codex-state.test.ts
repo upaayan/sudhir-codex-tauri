@@ -43,7 +43,7 @@ function thread(id: string, cwd = "/home/test/project-a"): Thread {
 }
 
 function agentItem(id: string, text = ""): ThreadItem {
-  return { agentMessage: { id, text, phase: null } };
+  return { type: "agentMessage", id, text, phase: null };
 }
 
 test("project persistence round-trips and rejects malformed input", () => {
@@ -119,11 +119,10 @@ test("thread hydration keeps persisted items in order", () => {
         id: "turn-1",
         items: [
           {
-            userMessage: {
-              id: "u1",
-              clientId: null,
-              content: [{ type: "text", text: "hi" }],
-            },
+            type: "userMessage",
+            id: "u1",
+            clientId: null,
+            content: [{ type: "text", text: "hi" }],
           },
           agentItem("a1", "persisted reply"),
         ],
@@ -260,17 +259,16 @@ test("command output deltas append to aggregated output", () => {
     method: "item/started",
     payload: {
       item: {
-        commandExecution: {
-          id: "c1",
-          command: "ls",
-          cwd: "/home/test",
-          processId: null,
-          status: "inProgress",
-          commandActions: [],
-          aggregatedOutput: null,
-          exitCode: null,
-          durationMs: null,
-        },
+        type: "commandExecution",
+        id: "c1",
+        command: "ls",
+        cwd: "/home/test",
+        processId: null,
+        status: "inProgress",
+        commandActions: [],
+        aggregatedOutput: null,
+        exitCode: null,
+        durationMs: null,
       },
       threadId: "t1",
       turnId: "turn-1",
@@ -300,7 +298,9 @@ test("command output deltas append to aggregated output", () => {
 test("unknown item kinds are classified into a fallback entry without crashing", () => {
   let state = createInitialState();
   const unknownItem = {
-    newHarmlessItem: { id: "x1", note: "something new" },
+    type: "newHarmlessItem",
+    id: "x1",
+    note: "something new",
   } as unknown as ThreadItem;
   state = stateReducer(state, {
     type: "notification",

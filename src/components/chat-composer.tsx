@@ -3,20 +3,25 @@ import { useState } from "react";
 interface Props {
   disabled: boolean;
   busy: boolean;
-  onSend: (text: string) => void;
+  onSend: (text: string) => Promise<void> | void;
   onInterrupt: () => void;
 }
 
 export function ChatComposer({ disabled, busy, onSend, onInterrupt }: Props) {
   const [text, setText] = useState("");
 
-  function submit() {
+  async function submit() {
     const trimmed = text.trim();
     if (!trimmed || disabled) {
       return;
     }
-    onSend(trimmed);
-    setText("");
+    try {
+      await onSend(trimmed);
+      setText("");
+    } catch {
+      // Keep the message so the user can retry; the diagnostic banner shows
+      // the failure reason.
+    }
   }
 
   return (

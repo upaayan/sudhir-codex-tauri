@@ -385,3 +385,17 @@ body {
   margin-bottom: 4px;
   font-size: 13px;
 }
+
+.fatal-card {
+  background: var(--bg-card);
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  padding: 20px;
+  margin: 40px auto;
+  max-width: 720px;
+}
+
+.fatal-card h2 {
+  margin: 0 0 10px;
+  font-size: 16px;
+}
