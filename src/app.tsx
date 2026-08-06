@@ -1,8 +1,19 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
-import { createRpcClient, type RpcClient, type RpcTransport } from "./codex-rpc.ts";
+import {
+  buildTurnInput,
+  deriveThreadTitle,
+  type Attachment,
+} from "./attachments.ts";
+import {
+  buildTurnSubmission,
+  createRpcClient,
+  type RpcClient,
+  type RpcTransport,
+} from "./codex-rpc.ts";
 import {
   classifyNotification,
   createInitialState,
@@ -10,12 +21,14 @@ import {
   serializeProjects,
   stateReducer,
   storageKey,
+  visibleActionFailure,
 } from "./codex-state.ts";
 import type {
   AccountRateLimitsResponse,
   AccountUsageResponse,
   CommandExecutionRequestApprovalParams,
   FileChangeRequestApprovalParams,
+  McpServerElicitationRequestParams,
   Model,
   PermissionsRequestApprovalParams,
   ServerRequestHandlerResult,
@@ -27,7 +40,14 @@ import { ChatTranscript } from "./components/chat-transcript.tsx";
 import { InteractionRequest, type PendingRequest } from "./components/interaction-request.tsx";
 import { ModelPicker } from "./components/model-picker.tsx";
 import { ProjectThreadSidebar } from "./components/project-thread-sidebar.tsx";
+import { ThemePicker } from "./components/theme-picker.tsx";
 import { UsagePanel } from "./components/usage-panel.tsx";
+import {
+  parseThemePreference,
+  resolveTheme,
+  THEME_STORAGE_KEY,
+  type ThemePreference,
+} from "./theme.ts";
 
 const MESSAGE_EVENT = "app-server://message";
 const EXIT_EVENT = "app-server://exit";
@@ -37,6 +57,8 @@ export function App() {
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
   const [projectThreads, setProjectThreads] = useState<Record<string, Thread[]>>({});
   const [recentThreads, setRecentThreads] = useState<Thread[]>([]);
+  const [themePreference, setThemePreference] = useState<ThemePreference>(() =>
+    parseThemePreference(localStorage.getItem(THEME_STORAGE_KEY)));
   const rpcRef = useRef<RpcClient | null>(null);
   const pendingResolvers = useRef(
     new Map<string | number, (outcome: ServerRequestHandlerResult) => void>(),
@@ -138,11 +160,21 @@ export function App() {
           "item/permissions/requestApproval",
         ),
         "item/tool/requestUserInput": makeRequestHandler("item/tool/requestUserInput"),
+        "mcpServer/elicitation/request": makeRequestHandler("mcpServer/elicitation/request"),
       },
       onNotification(method, params) {
         const action = classifyNotification(method, params);
         if (action) {
           dispatch(action);
+        }
+        if (method === "thread/name/updated") {
+          const notification = (params ?? {}) as Record<string, unknown>;
+          const threadId = typeof notification.threadId === "string" ? notification.threadId : null;
+          const threadName = typeof notification.threadName === "string" ? notification.threadName : null;
+          if (threadId) {
+            setRecentThreads((current) => renameThread(current, threadId, threadName));
+            setProjectThreads((current) => renameProjectThreads(current, threadId, threadName));
+          }
         }
       },
       onUnsupportedRequest(method, requestId, params) {
@@ -239,6 +271,25 @@ export function App() {
   }, [state.projects, state.lastProjectId]);
 
   useEffect(() => {
+    const systemTheme = window.matchMedia("(prefers-color-scheme: dark)");
+    const applyTheme = () => {
+      const resolved = resolveTheme(themePreference, systemTheme.matches);
+      document.documentElement.dataset.theme = resolved;
+      document.documentElement.style.colorScheme = resolved;
+    };
+
+    localStorage.setItem(THEME_STORAGE_KEY, themePreference);
+    applyTheme();
+    systemTheme.addEventListener("change", applyTheme);
+    if (runningInTauri()) {
+      void getCurrentWindow().setTheme(themePreference === "system" ? null : themePreference)
+        .catch(() => undefined);
+    }
+
+    return () => systemTheme.removeEventListener("change", applyTheme);
+  }, [themePreference]);
+
+  useEffect(() => {
     if (!state.connected) {
       return;
     }
@@ -253,9 +304,15 @@ export function App() {
     : null;
 
   const handleAddProject = useCallback(async () => {
-    const folder = await invoke<{ displayPath: string; backendPath: string } | null>(
-      "pick_project_folder",
-    );
+    let folder: { displayPath: string; backendPath: string } | null;
+    try {
+      folder = await invoke<{ displayPath: string; backendPath: string } | null>(
+        "pick_project_folder",
+      );
+    } catch (error) {
+      dispatch(visibleActionFailure("failed to pick project folder", error));
+      return;
+    }
     if (!folder) {
       return;
     }
@@ -280,10 +337,16 @@ export function App() {
       return;
     }
     dispatch({ type: "project/select", backendPath });
-    const result = (await client.request("thread/start", {
-      model: state.selectedModel,
-      cwd: backendPath,
-    })) as { thread: Thread };
+    let result: { thread: Thread };
+    try {
+      result = (await client.request("thread/start", {
+        model: state.selectedModel,
+        cwd: backendPath,
+      })) as { thread: Thread };
+    } catch (error) {
+      dispatch(visibleActionFailure("failed to start thread", error));
+      return;
+    }
     setProjectThreads((current) => ({
       ...current,
       [backendPath]: upsertNewestThread(current[backendPath] ?? [], result.thread),
@@ -318,18 +381,53 @@ export function App() {
   );
 
   const handleSend = useCallback(
-    async (text: string) => {
+    async (text: string, attachments: Attachment[]) => {
       const client = rpcRef.current;
       if (!client || !state.selectedThreadId) {
         return;
       }
       const threadId = state.selectedThreadId;
       const backendPath = state.selectedProjectBackendPath;
-      const result = (await client.request("turn/start", {
-        threadId: state.selectedThreadId,
-        input: [{ type: "text", text }],
+      const input = buildTurnInput(text, attachments);
+      if (input.length === 0) {
+        return;
+      }
+
+      const threadState = state.threadsBy[threadId];
+      const submission = buildTurnSubmission({
+        threadId,
+        input,
+        activeTurnId: threadState?.turnStatus === "inProgress" ? threadState.turnId : null,
         model: state.selectedModel,
-      })) as { turn: { id: string } };
+        effort: state.selectedReasoningEffort,
+        serviceTier: state.selectedServiceTier,
+      });
+
+      if (submission.method === "turn/start" && shouldAutoNameThread(threadState)) {
+        const name = deriveThreadTitle(text, attachments);
+        setRecentThreads((current) => renameThread(current, threadId, name));
+        setProjectThreads((current) => renameProjectThreads(current, threadId, name));
+        void client.request("thread/name/set", { threadId, name }).catch((error: unknown) => {
+          dispatch({
+            type: "connection/status",
+            connected: true,
+            diagnostic: `failed to name thread: ${String(error)}`,
+          });
+        });
+      }
+
+      let result: unknown;
+      try {
+        result = await client.request(submission.method, submission.params);
+      } catch (error) {
+        dispatch(visibleActionFailure(
+          submission.method === "turn/steer"
+            ? "failed to steer turn"
+            : "failed to start turn",
+          error,
+        ));
+        throw error;
+      }
       if (backendPath) {
         setProjectThreads((current) => ({
           ...current,
@@ -337,15 +435,19 @@ export function App() {
         }));
       }
       setRecentThreads((current) => promoteThread(current, threadId));
+      if (submission.method === "turn/steer") {
+        return;
+      }
+      const started = result as { turn: { id: string } };
       dispatch({
         type: "notification",
         method: "turn/started",
         threadId,
-        turnId: result.turn.id,
+        turnId: started.turn.id,
         payload: {
           threadId,
           turn: {
-            id: result.turn.id,
+            id: started.turn.id,
             items: [],
             itemsView: "notLoaded",
             status: "inProgress",
@@ -357,7 +459,15 @@ export function App() {
         },
       });
     },
-    [state.selectedThreadId, state.selectedModel, state.selectedProjectBackendPath, dispatch],
+    [
+      state.selectedThreadId,
+      state.selectedModel,
+      state.selectedReasoningEffort,
+      state.selectedServiceTier,
+      state.selectedProjectBackendPath,
+      state.threadsBy,
+      dispatch,
+    ],
   );
 
   const handleInterrupt = useCallback(async () => {
@@ -366,11 +476,15 @@ export function App() {
     if (!client || !thread?.turnId) {
       return;
     }
-    await client.request("turn/interrupt", {
-      threadId: thread.threadId,
-      turnId: thread.turnId,
-    });
-  }, [state.selectedThreadId, state.threadsBy]);
+    try {
+      await client.request("turn/interrupt", {
+        threadId: thread.threadId,
+        turnId: thread.turnId,
+      });
+    } catch (error) {
+      dispatch(visibleActionFailure("failed to interrupt turn", error));
+    }
+  }, [state.selectedThreadId, state.threadsBy, dispatch]);
 
   const resolveRequest = useCallback(
     (requestId: string | number, outcome: ServerRequestHandlerResult) => {
@@ -416,7 +530,8 @@ export function App() {
           />
         ))}
         <ChatComposer
-          disabled={!state.connected || busy || !state.selectedThreadId}
+          key={state.selectedThreadId ?? "no-thread"}
+          disabled={!state.connected || !state.selectedThreadId}
           busy={busy}
           onSend={handleSend}
           onInterrupt={handleInterrupt}
@@ -426,8 +541,14 @@ export function App() {
         <ModelPicker
           models={state.models}
           value={state.selectedModel}
+          reasoningEffort={state.selectedReasoningEffort}
+          serviceTier={state.selectedServiceTier}
           disabled={!state.connected}
           onChange={(model) => dispatch({ type: "model/select", model })}
+          onReasoningEffortChange={(effort) =>
+            dispatch({ type: "reasoningEffort/select", effort })}
+          onServiceTierChange={(serviceTier) =>
+            dispatch({ type: "serviceTier/select", serviceTier })}
         />
         <UsagePanel
           rateLimits={state.rateLimits}
@@ -436,6 +557,7 @@ export function App() {
           usageError={state.usageError}
           threadUsage={selectedThread?.tokenUsage ?? null}
         />
+        <ThemePicker value={themePreference} onChange={setThemePreference} />
       </aside>
     </div>
   );
@@ -448,6 +570,36 @@ function upsertNewestThread(threads: Thread[], thread: Thread): Thread[] {
 function promoteThread(threads: Thread[], threadId: string): Thread[] {
   const thread = threads.find((candidate) => candidate.id === threadId);
   return thread ? upsertNewestThread(threads, thread) : threads;
+}
+
+function renameThread(threads: Thread[], threadId: string, name: string | null): Thread[] {
+  return threads.map((thread) => thread.id === threadId ? { ...thread, name } : thread);
+}
+
+function renameProjectThreads(
+  projectThreads: Record<string, Thread[]>,
+  threadId: string,
+  name: string | null,
+): Record<string, Thread[]> {
+  return Object.fromEntries(Object.entries(projectThreads).map(([backendPath, threads]) => [
+    backendPath,
+    renameThread(threads, threadId, name),
+  ]));
+}
+
+function shouldAutoNameThread(thread: ReturnType<typeof createInitialState>["threadsBy"][string] | undefined): boolean {
+  if (!thread) {
+    return false;
+  }
+  const name = thread.thread?.name?.trim() ?? "";
+  const hasUserMessage = thread.entries.some(
+    (entry) => entry.kind === "item" && entry.item.type === "userMessage",
+  );
+  return !hasUserMessage && (!name || /^untitled (thread|task)$/i.test(name));
+}
+
+function runningInTauri(): boolean {
+  return Boolean((globalThis as typeof globalThis & { isTauri?: boolean }).isTauri);
 }
 
 function requestLabel(method: string, params: unknown): string {
@@ -467,6 +619,10 @@ function requestLabel(method: string, params: unknown): string {
     case "item/tool/requestUserInput": {
       const record = params as ToolRequestUserInputParams;
       return record.questions[0]?.question ?? "Answer requested";
+    }
+    case "mcpServer/elicitation/request": {
+      const record = params as McpServerElicitationRequestParams;
+      return record.message || `Request from ${record.serverName}`;
     }
     default:
       return `Request: ${method}`;

@@ -1,27 +1,27 @@
-import type { ItemEntry, TranscriptEntry } from "./codex-state.ts";
-import { itemPayload } from "./codex-types.ts";
+import type { TranscriptEntry } from "./codex-state.ts";
+import { isUnknownItem, itemPayload } from "./codex-types.ts";
 
 export type TranscriptRow =
   | { kind: "entry"; key: string; entry: TranscriptEntry }
-  | { kind: "reasoning"; key: string; entries: ItemEntry[] };
+  | { kind: "activity"; key: string; entries: TranscriptEntry[] };
 
 export function groupTranscriptEntries(entries: TranscriptEntry[]): TranscriptRow[] {
   const rows: TranscriptRow[] = [];
-  const reasoningRowsByTurn = new Map<string, Extract<TranscriptRow, { kind: "reasoning" }>>();
+  const activityRowsByTurn = new Map<string, Extract<TranscriptRow, { kind: "activity" }>>();
 
   for (const entry of entries) {
-    if (entry.kind === "item" && itemPayload(entry.item, "reasoning")) {
-      const groupKey = entry.turnId ? `turn:${entry.turnId}` : `item:${entry.key}`;
-      const existing = reasoningRowsByTurn.get(groupKey);
+    if (isActivityEntry(entry)) {
+      const groupKey = entry.turnId ? `turn:${entry.turnId}` : `entry:${entry.key}`;
+      const existing = activityRowsByTurn.get(groupKey);
       if (existing) {
         existing.entries.push(entry);
       } else {
-        const row: Extract<TranscriptRow, { kind: "reasoning" }> = {
-          kind: "reasoning",
-          key: `reasoning:${groupKey}`,
+        const row: Extract<TranscriptRow, { kind: "activity" }> = {
+          kind: "activity",
+          key: `activity:${groupKey}`,
           entries: [entry],
         };
-        reasoningRowsByTurn.set(groupKey, row);
+        activityRowsByTurn.set(groupKey, row);
         rows.push(row);
       }
       continue;
@@ -31,4 +31,21 @@ export function groupTranscriptEntries(entries: TranscriptEntry[]): TranscriptRo
   }
 
   return rows;
+}
+
+function isActivityEntry(entry: TranscriptEntry): boolean {
+  if (entry.kind === "unsupportedRequest") {
+    return true;
+  }
+  if (isUnknownItem(entry.item)) {
+    return true;
+  }
+  if (itemPayload(entry.item, "userMessage") || itemPayload(entry.item, "imageGeneration")) {
+    return false;
+  }
+  const agentMessage = itemPayload(entry.item, "agentMessage");
+  if (agentMessage) {
+    return agentMessage.phase === "commentary";
+  }
+  return true;
 }

@@ -70,8 +70,69 @@ cd ..
 pnpm tauri build     # release bundles (.app + .dmg on macOS, NSIS on Windows)
 ```
 
-macOS artifacts land in `src-tauri/target/release/bundle/`; the app is
-ad-hoc/linker signed (`codesign -dv` shows `adhoc`).
+An explicit Apple Silicon build lands under
+`src-tauri/target/aarch64-apple-darwin/release/bundle/`:
+
+```bash
+pnpm tauri:package:mac
+```
+
+That command builds the app, retrieves `alamelu/pi-codesign` from AWS Secrets
+Manager, unlocks the dedicated signing keychain non-interactively, signs by
+the AWS-provided identity hash, and verifies the hardened-runtime signature.
+It never prints the keychain password or signs by the duplicated friendly
+certificate name.
+
+Tauri creates its DMG before the post-build local signing step. For local
+testing, install the signed `.app` directly or ZIP that signed bundle:
+
+```bash
+mkdir -p work/artifacts
+ditto -c -k --sequesterRsrc --keepParent \
+  "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Sudhir-Codex Tauri.app" \
+  "work/artifacts/Sudhir-Codex-Tauri-macos-aarch64-signed.zip"
+```
+
+### Native Windows verification and local package
+
+Run the Windows build with Windows Node/Rust from a Windows-drive checkout;
+the packaged app will still launch the backend in default WSL at runtime.
+Neither the Windows Codex desktop app nor the Windows ChatGPT app is a build or
+runtime dependency.
+
+On a Corepack-only Windows installation, Tauri's configured
+`beforeBuildCommand` still invokes bare `pnpm build`. Before the commands below,
+put this temporary, build-only shim on `PATH` (this is the exact approach used
+for the verified local package):
+
+```powershell
+$pnpmShimRoot = Join-Path $env:TEMP "sudhir-codex-pnpm-shim"
+New-Item -ItemType Directory -Force -Path $pnpmShimRoot | Out-Null
+Set-Content -LiteralPath (Join-Path $pnpmShimRoot "pnpm.cmd") `
+  -Encoding Ascii -NoNewline -Value "@echo off`r`ncorepack.cmd pnpm %*`r`n"
+$env:PATH = "$pnpmShimRoot;$env:PATH"
+```
+
+```powershell
+corepack pnpm install --frozen-lockfile
+corepack pnpm test
+corepack pnpm typecheck
+corepack pnpm build
+
+Push-Location src-tauri
+cargo fmt --check
+cargo test --locked
+cargo check --locked
+Pop-Location
+
+corepack pnpm tauri build
+
+Remove-Item -LiteralPath $pnpmShimRoot -Recurse -Force
+```
+
+The final command emits the x64 NSIS installer under
+`src-tauri\target\release\bundle\nsis\`. Building the installer does not
+install or launch it.
 
 ### Local dev (debug window)
 
@@ -112,14 +173,27 @@ explicit `.ts` import extensions, and no `.tsx` imports.
 
 ## Icons
 
-Regenerate the icon set from the source scratch image:
+The checked-in cross-platform icon set is generated from the supplied Parallel
+Handoff logo:
 
 ```bash
-node work/gen-icon.mjs      # writes work/icon.png (1024x1024)
-pnpm tauri icon work/icon.png
+pnpm tauri icon documents/logo/parallel-handoff-1024x1024.png
 ```
 
-`pnpm tauri icon` rewrites `src-tauri/icons/` for every platform.
+`pnpm tauri icon` rewrites `src-tauri/icons/` for macOS, Windows, iOS, and
+Android. The desktop bundle configuration consumes `icon.icns`, `icon.ico`,
+and the PNG sizes, so the same source logo is used on macOS and Windows.
+
+## Local macOS signing and installation
+
+The sanctioned credential source is AWS Secrets Manager secret
+`alamelu/pi-codesign` in `ap-south-1`. The signing script requires
+`identity_hash`, `keychain_path`, and `keychain_password`, unlocks the explicit
+keychain, sets the code-signing partition list, signs with no timestamp, and
+runs strict deep verification. Do not substitute the friendly certificate
+name or inspect the signing keychain interactively.
+
+See `DEPLOY-MACOS.md` for installation, launch, smoke testing, and rollback.
 
 ## GitHub Actions
 
@@ -129,6 +203,11 @@ Silicon `.app` (ad-hoc signed, verified, ZIPped); Windows produces an x64 NSIS
 installer. The Windows hosted job does **not** run a real WSL integration
 test — that check runs on the owner's Windows laptop per
 `DEPLOY-WINDOWS.md`.
+
+For UI and icon changes, stop after the signed local macOS build and owner
+test. Do not dispatch or modify GitHub Actions until the owner explicitly
+approves the locally tested result; only then regenerate both macOS and
+Windows artifacts.
 
 ## Rebuild checklist (for a future agent)
 
@@ -140,6 +219,7 @@ test — that check runs on the owner's Windows laptop per
 5. `cd src-tauri && cargo fmt && cargo test && cargo build && cd ..`.
 6. Run `node work/live-contract.mjs` (read-only) against the installed
    `sudhir-codex`.
-7. `pnpm tauri build`; record artifact paths and checksums.
+7. On macOS, run `pnpm tauri:package:mac`; strictly verify the signed `.app`
+   and record the signed ZIP checksum. On Windows, use the normal Tauri build.
 8. Cross-check every command in `DEPLOY-MACOS.md` / `DEPLOY-WINDOWS.md` from a
    clean clone before claiming a release candidate.

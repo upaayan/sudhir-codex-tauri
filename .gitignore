@@ -8,3 +8,7 @@ src-tauri/target/
 src-tauri/gen/
 /work/
 .DS_Store
+
+# Generated local analysis and logo-concept scratch files
+/.codegraph/
+/design/logo-concepts/

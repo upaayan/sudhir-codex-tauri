@@ -5,6 +5,7 @@ import path from "node:path";
 import { after, before, test } from "node:test";
 
 import {
+  buildTurnSubmission,
   createRpcClient,
   type RpcClient,
   type RpcTransport,
@@ -74,6 +75,43 @@ async function initClient(transport: MemoryTransport, client: RpcClient): Promis
 // ---------------------------------------------------------------------------
 // Unit tests: correlation, errors, server requests, timeout, close
 // ---------------------------------------------------------------------------
+
+test("buildTurnSubmission starts an idle turn with its selected settings", () => {
+  assert.deepEqual(buildTurnSubmission({
+    threadId: "thread-1",
+    input: [{ type: "text", text: "Start here" }],
+    model: "gpt-5.6-sol",
+    effort: "xhigh",
+    serviceTier: "priority",
+  }), {
+    method: "turn/start",
+    params: {
+      threadId: "thread-1",
+      input: [{ type: "text", text: "Start here" }],
+      model: "gpt-5.6-sol",
+      effort: "xhigh",
+      serviceTier: "priority",
+    },
+  });
+});
+
+test("buildTurnSubmission steers an active turn without settings overrides", () => {
+  assert.deepEqual(buildTurnSubmission({
+    threadId: "thread-1",
+    input: [{ type: "text", text: "Focus on the failing test" }],
+    activeTurnId: "turn-7",
+    model: "gpt-5.6-sol",
+    effort: "xhigh",
+    serviceTier: "priority",
+  }), {
+    method: "turn/steer",
+    params: {
+      threadId: "thread-1",
+      input: [{ type: "text", text: "Focus on the failing test" }],
+      expectedTurnId: "turn-7",
+    },
+  });
+});
 
 test("correlates responses with requests out of order", async () => {
   const transport = new MemoryTransport();
@@ -193,8 +231,8 @@ test("unsupported server request gets an error response and an event", async () 
     JSON.stringify({
       jsonrpc: "2.0",
       id: 601,
-      method: "mcpServer/elicitation/request",
-      params: { threadId: "t1", serverName: "srv", request: {} },
+      method: "future/serverRequest",
+      params: { threadId: "t1" },
     }),
   );
   const response = transport.lastSent() as {
@@ -203,7 +241,7 @@ test("unsupported server request gets an error response and an event", async () 
   };
   assert.equal(response.id, 601);
   assert.equal(response.error?.code, -32601);
-  assert.deepEqual(unsupported, [["mcpServer/elicitation/request", 601]]);
+  assert.deepEqual(unsupported, [["future/serverRequest", 601]]);
   client.close();
 });
 
@@ -232,13 +270,19 @@ test("initialize sends the fixed client identity then initialized", async () => 
   const init = client.initialize();
   const sent = JSON.parse(transport.sent[0]!) as {
     method: string;
-    params: { clientInfo: { name: string; title: string; version: string } };
+    params: {
+      clientInfo: { name: string; title: string; version: string };
+      capabilities: { mcpServerOpenaiFormElicitation: boolean };
+    };
   };
   assert.equal(sent.method, "initialize");
   assert.deepEqual(sent.params.clientInfo, {
     name: CLIENT_NAME,
     title: CLIENT_TITLE,
     version: CLIENT_VERSION,
+  });
+  assert.deepEqual(sent.params.capabilities, {
+    mcpServerOpenaiFormElicitation: true,
   });
   transport.deliver(
     JSON.stringify({
@@ -392,13 +436,13 @@ before(async () => {
   client = createRpcClient({
     transport,
     onNotification: dispatchNotification,
-    onUnsupportedRequest: (method, id) => {
+    onUnsupportedRequest: (method, id, params) => {
       unsupportedRequests.push({ method, id });
-      const params = method === "mcpServer/elicitation/request" ? { threadId: "thread-1" } : {};
+      const requestParams = (params ?? {}) as { threadId?: string };
       state = stateReducer(state, {
         type: "unsupportedRequest",
         method,
-        threadId: (params as { threadId?: string }).threadId ?? null,
+        threadId: requestParams.threadId ?? null,
         requestId: id,
       });
     },
@@ -420,6 +464,9 @@ before(async () => {
         }
         return { result: { answers } };
       },
+      "mcpServer/elicitation/request": (): ServerRequestHandlerResult => ({
+        result: { action: "accept", content: {}, _meta: null },
+      }),
     },
   });
   await client.initialize();
@@ -509,6 +556,27 @@ test("integration: a turn streams deltas to completion", async () => {
     return thread.turnStatus === "completed" && completed && thread.turnId === response.turn.id;
   });
   assert.equal(state.threadsBy["thread-1"]!.tokenUsage?.total.totalTokens, 1520);
+});
+
+test("integration: an active turn accepts steering with its expected turn id", async () => {
+  const started = await client.request("turn/start", {
+    threadId: "thread-1",
+    input: [{ type: "text", text: "Begin the task" }],
+  }) as { turn: { id: string } };
+
+  const steered = await client.request("turn/steer", {
+    threadId: "thread-1",
+    input: [{ type: "text", text: "Focus on the failing test" }],
+    expectedTurnId: started.turn.id,
+  });
+  assert.deepEqual(steered, { turnId: started.turn.id });
+
+  const entry = await waitForLog((log) => log.steeredTurnId === started.turn.id);
+  assert.deepEqual(entry.input, [{ type: "text", text: "Focus on the failing test" }]);
+  await waitForState(
+    (current) => current.threadsBy["thread-1"]?.turnId === started.turn.id &&
+      current.threadsBy["thread-1"]?.turnStatus === "completed",
+  );
 });
 
 test("integration: error notification with the real shape marks the turn failed", async () => {
@@ -640,23 +708,38 @@ test("integration: requestUserInput flow completes a turn", async () => {
   assert.deepEqual(message.result?.answers["q-owner"]?.answers, ["owner answer"]);
 });
 
-test("integration: unsupported server request errors immediately and shows a fallback card", async () => {
+test("integration: MCP elicitation completes with the required action response", async () => {
   await sendControl({
     __control: "sendServerRequest",
     id: 1005,
     method: "mcpServer/elicitation/request",
-    params: { threadId: "thread-1", serverName: "srv", request: {} },
+    params: {
+      threadId: "thread-1",
+      turnId: "turn-1",
+      serverName: "node_repl",
+      mode: "form",
+      message: "Allow Chrome access?",
+      requestedSchema: { type: "object", properties: {} },
+    },
   });
   const entry = await waitForLog((log) => log.responseForRequest === "mcpServer/elicitation/request");
+  const message = entry.message as { result?: { action: string; content: unknown } };
+  assert.deepEqual(message.result, { action: "accept", content: {}, _meta: null });
+});
+
+test("integration: an unknown server request still errors and shows a fallback card", async () => {
+  await sendControl({
+    __control: "sendServerRequest",
+    id: 1006,
+    method: "future/serverRequest",
+    params: { threadId: "thread-1" },
+  });
+  const entry = await waitForLog((log) => log.responseForRequest === "future/serverRequest");
   const message = entry.message as { error?: { code: number } };
   assert.equal(message.error?.code, -32601);
-  assert.ok(
-    unsupportedRequests.some(
-      (u) => u.method === "mcpServer/elicitation/request" && u.id === 1005,
-    ),
-  );
+  assert.ok(unsupportedRequests.some((u) => u.method === "future/serverRequest" && u.id === 1006));
   const card = state.threadsBy["thread-1"]!.entries.find(
-    (e) => e.kind === "unsupportedRequest" && e.requestId === 1005,
+    (e) => e.kind === "unsupportedRequest" && e.requestId === 1006,
   );
   assert.ok(card);
 });

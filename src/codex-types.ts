@@ -52,6 +52,11 @@ export interface ClientInfo {
 
 export interface InitializeParams {
   clientInfo: ClientInfo;
+  capabilities?: InitializeCapabilities;
+}
+
+export interface InitializeCapabilities {
+  mcpServerOpenaiFormElicitation?: boolean;
 }
 
 export interface InitializeResponse {
@@ -163,10 +168,22 @@ export interface TurnStartParams {
   threadId: string;
   input: UserInput[];
   model?: string | null;
+  effort?: string | null;
+  serviceTier?: string | null;
 }
 
 export interface TurnStartResponse {
   turn: Turn;
+}
+
+export interface TurnSteerParams {
+  threadId: string;
+  input: UserInput[];
+  expectedTurnId: string;
+}
+
+export interface TurnSteerResponse {
+  turnId: string;
 }
 
 export interface TurnInterruptParams {
@@ -176,6 +193,11 @@ export interface TurnInterruptParams {
 
 export interface TurnInterruptResponse {
   ok: boolean;
+}
+
+export interface ThreadNameUpdatedNotification {
+  threadId: string;
+  threadName?: string | null;
 }
 
 export interface ModelListParams {
@@ -190,10 +212,22 @@ export interface Model {
   displayName: string;
   description: string;
   hidden: boolean;
-  supportedReasoningEfforts: string[];
+  supportedReasoningEfforts: Array<string | ReasoningEffortOption>;
   defaultReasoningEffort: string;
   isDefault: boolean;
-  serviceTiers?: string[];
+  serviceTiers?: ModelServiceTier[];
+  defaultServiceTier?: string | null;
+}
+
+export interface ReasoningEffortOption {
+  reasoningEffort: string;
+  description?: string;
+}
+
+export interface ModelServiceTier {
+  id: string;
+  name: string;
+  description: string;
 }
 
 export interface ModelListResponse {
@@ -305,9 +339,57 @@ export interface McpToolCallItem {
   tool: string;
   status: string;
   arguments: JsonValue;
-  result?: unknown;
+  result?: McpToolCallResult | null;
   error?: { message?: string } | null;
   durationMs?: number | null;
+}
+
+export interface McpToolCallResult {
+  content: JsonValue[];
+  structuredContent?: JsonValue | null;
+  _meta?: JsonValue | null;
+}
+
+export interface McpImageContent {
+  dataUrl: string;
+  mimeType: string;
+}
+
+const DISPLAYABLE_MCP_IMAGE_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+  "image/avif",
+]);
+
+export function mcpImageContent(result: unknown): McpImageContent[] {
+  if (!isJsonRecord(result) || !Array.isArray(result.content)) {
+    return [];
+  }
+  const images: McpImageContent[] = [];
+  for (const content of result.content) {
+    if (!isJsonRecord(content) || content.type !== "image") {
+      continue;
+    }
+    const mimeType = typeof content.mimeType === "string"
+      ? content.mimeType.trim().toLowerCase()
+      : "";
+    if (!DISPLAYABLE_MCP_IMAGE_TYPES.has(mimeType) || typeof content.data !== "string") {
+      continue;
+    }
+    const compact = content.data.replace(/\s+/g, "");
+    if (!compact || compact.length % 4 === 1 || !/^[A-Za-z0-9+/]*={0,2}$/.test(compact)) {
+      continue;
+    }
+    const padded = compact.padEnd(compact.length + ((4 - compact.length % 4) % 4), "=");
+    images.push({ dataUrl: `data:${mimeType};base64,${padded}`, mimeType });
+  }
+  return images;
+}
+
+function isJsonRecord(value: unknown): value is Record<string, JsonValue> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export interface ContextCompactionItem {
@@ -349,8 +431,17 @@ export interface ImageGenerationItem {
   type: "imageGeneration";
   id: string;
   status: string;
-  images?: unknown[];
-  error?: { message?: string } | null;
+  revisedPrompt: string | null;
+  result: string;
+  savedPath?: string;
+}
+
+export function imageGenerationDataUrl(result: string): string | null {
+  const image = result.trim();
+  if (!image) {
+    return null;
+  }
+  return image.startsWith("data:image/") ? image : `data:image/png;base64,${image}`;
 }
 
 export type ThreadItem = UserMessageItem | AgentMessageItem | ReasoningItem |
@@ -674,7 +765,12 @@ export interface McpServerElicitationRequestParams {
   threadId: string;
   turnId?: string | null;
   serverName: string;
-  request: JsonValue;
+  mode: "form" | "openai/form" | "url" | string;
+  message: string;
+  requestedSchema?: JsonValue;
+  url?: string;
+  elicitationId?: string;
+  _meta?: JsonValue;
 }
 
 export type ServerRequest =

@@ -71,7 +71,6 @@ impl AppServerProcess {
             .stderr(Stdio::piped());
         #[cfg(target_os = "windows")]
         {
-            use std::os::windows::process::CommandExt;
             if spec.create_no_window {
                 command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
             }

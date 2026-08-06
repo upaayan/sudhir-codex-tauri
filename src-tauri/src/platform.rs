@@ -95,9 +95,14 @@ pub async fn convert_host_path_to_backend(path: &str) -> Result<String, String> 
     if is_wsl_unc_path(path) {
         return reduce_wsl_unc_path(path).ok_or_else(|| "invalid WSL path".to_string());
     }
-    let output = tokio::process::Command::new("wsl.exe")
+    let mut command = tokio::process::Command::new("wsl.exe");
+    command
         .args(["--exec", "wslpath", "-a", "-u", path])
-        .env("WSL_UTF8", "1")
+        .env("WSL_UTF8", "1");
+    {
+        command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    let output = command
         .output()
         .await
         .map_err(|error| format!("failed to run wslpath: {error}"))?;

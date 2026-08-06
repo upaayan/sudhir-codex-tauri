@@ -7,80 +7,177 @@ or install one.
 
 ```bash
 ~/.local/bin/sudhir-codex --version
-sudhir-codex gateway status   # if the CLI exposes it
+~/.local/bin/sudhir-codex doctor
 ```
 
-The launcher shim must exist at `$HOME/.local/bin/sudhir-codex` (the standard
-install location for this machine).
+The launcher must exist at `$HOME/.local/bin/sudhir-codex`, and the persistent
+gateway must already be healthy.
 
-## Artifact download and inspection
+For this local build, Chrome control uses the `node_repl`, browser-client, and
+module assets configured from `/Applications/Sudhir-Codex.app`. Keep that
+separately namespaced app installed (it does not need to be running) until the
+runtime is packaged independently; removing it will break the Chrome-control
+smoke step below.
 
-1. Download the macOS artifact
-   `sudhir-codex-tauri-macos-aarch64.zip` from the GitHub Actions run.
-2. Verify the checksum:
+## Build and sign the local candidate
+
+From the repository root:
 
 ```bash
-shasum -a 256 ~/Downloads/Sudhir-Codex-Tauri-macos-aarch64.zip
+pnpm install --frozen-lockfile
+pnpm test
+pnpm build
+cd src-tauri && cargo fmt --check && cargo test && cd ..
+pnpm tauri:package:mac
 ```
 
-3. Verify the ad-hoc signature after extraction:
+`tauri:package:mac` builds for Apple Silicon and then runs
+`scripts/sign-macos-candidate.mjs`. The script retrieves secret
+`alamelu/pi-codesign` from AWS Secrets Manager in `ap-south-1`, unlocks the
+explicit dedicated keychain, signs by the AWS-provided identity hash with
+hardened runtime and no timestamp, and verifies the result. It must never
+print the secret, request a password, or fall back to a friendly certificate
+name.
+
+The signed candidate is:
+
+```text
+src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Sudhir-Codex Tauri.app
+```
+
+Tauri creates the DMG before this post-build signing step, so that DMG is not
+the local test artifact. ZIP the signed app instead:
 
 ```bash
-ditto -x -k ~/Downloads/Sudhir-Codex-Tauri-macos-aarch64.zip ~/Downloads/sct-extract
-codesign -dv --verbose=2 ~/Downloads/sct-extract/"Sudhir-Codex Tauri.app"
+mkdir -p work/artifacts
+ditto -c -k --sequesterRsrc --keepParent \
+  "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Sudhir-Codex Tauri.app" \
+  "work/artifacts/Sudhir-Codex-Tauri-macos-aarch64-signed.zip"
+shasum -a 256 work/artifacts/Sudhir-Codex-Tauri-macos-aarch64-signed.zip
 ```
 
-The signature is ad-hoc (`flags=0x20002(adhoc,linker-signed)`); there is no
-Developer ID.
+## Static verification
+
+```bash
+candidate="src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Sudhir-Codex Tauri.app"
+codesign --verify --deep --strict --verbose=2 "$candidate"
+codesign -dv --verbose=4 "$candidate"
+/usr/libexec/PlistBuddy \
+  -c 'Print :CFBundleIdentifier' \
+  -c 'Print :CFBundleName' \
+  -c 'Print :CFBundleExecutable' \
+  "$candidate/Contents/Info.plist"
+```
+
+Expected identifier: `com.sudhir.codex.tauri`. `codesign -dv` must show a
+non-ad-hoc local signature and hardened runtime. This is local signing, not an
+Apple-notarized Developer ID release.
 
 ## Installation
 
-```bash
-cp -R ~/Downloads/sct-extract/"Sudhir-Codex Tauri.app" /Applications/
-```
+Quit only an older `Sudhir-Codex Tauri` instance. Do not stop official ChatGPT,
+the separately namespaced `/Applications/Sudhir-Codex.app`, or the persistent
+gateway.
 
-This does not touch official ChatGPT or the existing Sudhir-Codex frontend;
-both may remain installed during migration testing.
-
-## First run — Gatekeeper
-
-The Actions artifact carries `com.apple.quarantine`, so the first launch is
-blocked by Gatekeeper. Use Finder: right-click (or Control-click) the app in
-`/Applications` and choose **Open**, then confirm in the dialog. Only if
-Finder Open is not sufficient, remove quarantine scoped to the installed app
-path:
+If an older Tauri app exists, preserve a dated rollback before replacement:
 
 ```bash
-xattr -dr com.apple.quarantine "/Applications/Sudhir-Codex Tauri.app"
+mkdir -p work/backups
+stamp="$(date +%Y%m%d-%H%M%S)"
+ditto "/Applications/Sudhir-Codex Tauri.app" \
+  "work/backups/Sudhir-Codex-Tauri.pre-update-$stamp.app"
+codesign --verify --deep --strict \
+  "work/backups/Sudhir-Codex-Tauri.pre-update-$stamp.app"
 ```
 
-## First-run and functional smoke test
-
-1. Launch the app. A diagnostic banner would show startup problems; a healthy
-   start shows no banner.
-2. Add a project (native folder picker).
-3. Select an existing thread or start a new one; send one short turn.
-4. Switch the model in the header picker; verify the next turn uses it.
-5. Open the Usage panel and confirm ChatGPT/account and thread token figures
-   render (or show a plain "no data" note).
-6. Inspect approval and `request_user_input` cards only if the current
-   backend configuration emits them; the fake app-server integration test is
-   the authoritative proof for those interaction families.
-7. Close the window and relaunch; the app-server child is shut down and
-   restarted cleanly. The persistent `sudhir-codex` gateway keeps running.
-
-## Replacement and rollback
-
-To replace: quit the app, `rm -rf "/Applications/Sudhir-Codex Tauri.app"`,
-then repeat installation. To roll back to a previous build, keep the previous
-ZIP and repeat the same steps. Your threads and state live under
-`$HOME/.sudhir-codex` and are untouched by any of this.
-
-## Removal
+Install the verified candidate at the canonical path:
 
 ```bash
-rm -rf "/Applications/Sudhir-Codex Tauri.app"
+ditto \
+  "src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Sudhir-Codex Tauri.app" \
+  "/Applications/Sudhir-Codex Tauri.app"
+codesign --verify --deep --strict "/Applications/Sudhir-Codex Tauri.app"
+open "/Applications/Sudhir-Codex Tauri.app"
 ```
 
-This preserves `$HOME/.sudhir-codex`, all threads, credentials, and the
-`sudhir-codex` installation.
+A locally built app should not carry download quarantine. If a ZIP transferred
+through another service acquires quarantine, use Finder's right-click **Open**
+flow first. Do not remove quarantine from any broader path.
+
+## Functional smoke test
+
+1. Launch the app. A healthy start shows no diagnostic banner.
+2. Confirm the Parallel Handoff logo appears in Finder and the Dock.
+3. Add a project with the native folder picker.
+4. Select an existing thread or start a new one; send one short turn. Confirm
+   the thread is named automatically and tool/thinking output stays inside the
+   initially closed Activity disclosure.
+5. While that turn is active, confirm the composer says `Thinking…`, remains
+   editable, and shows both **Steer** and **Interrupt**. Type a correction and
+   press Enter or **Steer**; confirm it joins the same running turn. After the
+   turn completes, confirm the idle prompt says `Type your request…`.
+6. Paste or type a long multi-line draft. Confirm the composer grows upward as
+   text wraps, up to 220 px, and only then becomes internally scrollable.
+7. Press Command-plus and Command-minus to change the complete UI scale, then
+   Command-0 to reset it.
+8. Attach one image and one document, once with the picker and once by dropping
+   a file into the composer. Confirm both attachment chips appear and send.
+9. Ask for a generated image. Confirm the in-progress card becomes a rendered
+   image with its revised prompt below it.
+10. Switch among System, Light, and Dark themes. Switch models and confirm each
+   model exposes its backend-supported Effort choices. For a `gpt-*` model,
+   also change the available Speed tier; confirm Speed is absent for non-GPT
+   models and the next idle turn uses the choices.
+11. With Google Chrome already running and the ChatGPT browser extension
+   enabled, ask `Use Chrome to open https://example.com and take a screenshot`.
+   Accept the visible browser-origin request. Expand Activity and confirm the
+   returned screenshot renders there.
+12. Open Usage and confirm account and thread figures render.
+13. Close and relaunch. The app-server child must stop and restart while the
+   persistent gateway remains running.
+
+Generated images and MCP screenshot image blocks are delivered by app-server
+JSON-RPC and rendered as data URLs; display does not require filesystem
+permissions. File-picker and drag/drop attachments are converted to backend
+paths before the turn starts.
+
+## Release sequencing
+
+Stop after the signed local app and owner smoke test. Do not modify or dispatch
+GitHub Actions until the owner explicitly approves this build. After approval,
+regenerate both Windows and macOS artifacts so the same UI and icon changes are
+tested on both platforms.
+
+## Post-approval GitHub Actions artifact
+
+Only after that approval and a successful Actions run, download artifact
+`sudhir-codex-tauri-macos-aarch64`. Verify the downloaded wrapper and the inner
+`Sudhir-Codex-Tauri-macos-aarch64.zip` checksum before extraction, then inspect
+the CI bundle:
+
+```bash
+shasum -a 256 ~/Downloads/Sudhir-Codex-Tauri-macos-aarch64.zip
+mkdir -p ~/Downloads/sudhir-codex-tauri-actions
+ditto -x -k ~/Downloads/Sudhir-Codex-Tauri-macos-aarch64.zip \
+  ~/Downloads/sudhir-codex-tauri-actions
+codesign --verify --deep --strict --verbose=2 \
+  ~/Downloads/sudhir-codex-tauri-actions/"Sudhir-Codex Tauri.app"
+codesign -dv --verbose=4 \
+  ~/Downloads/sudhir-codex-tauri-actions/"Sudhir-Codex Tauri.app"
+```
+
+The Actions bundle is ad-hoc signed, unlike the locally signed owner-test
+bundle. After installing it under `/Applications`, use Finder's right-click
+**Open** flow for the first quarantined launch. Only if Finder Open is
+insufficient, remove quarantine from the exact installed Tauri app path—never
+from `/Applications` or another broader path.
+
+## Rollback and removal
+
+To roll back, quit only `Sudhir-Codex Tauri`, preserve the failed candidate,
+restore the verified dated backup to `/Applications/Sudhir-Codex Tauri.app`,
+verify it, and reopen it.
+
+Removing `/Applications/Sudhir-Codex Tauri.app` removes only this frontend. It
+does not remove `$HOME/.sudhir-codex`, the CLI/backend, gateway, threads, or
+credentials.

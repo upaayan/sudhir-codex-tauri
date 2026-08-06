@@ -1,9 +1,27 @@
 use serde::Serialize;
+use std::path::{Path, PathBuf};
 use tauri::{Manager, State};
 use tokio::sync::Mutex;
 
 mod app_server;
 mod platform;
+
+#[cfg(test)]
+mod attachment_tests {
+    use super::attachment_kind_for_path;
+    use std::path::Path;
+
+    #[test]
+    fn classifies_supported_images_separately_from_documents() {
+        assert_eq!(attachment_kind_for_path(Path::new("photo.PNG")), "image");
+        assert_eq!(attachment_kind_for_path(Path::new("photo.webp")), "image");
+        assert_eq!(
+            attachment_kind_for_path(Path::new("report.pdf")),
+            "document"
+        );
+        assert_eq!(attachment_kind_for_path(Path::new("README")), "document");
+    }
+}
 
 use app_server::AppServerProcess;
 
@@ -14,6 +32,15 @@ struct AppServerState(Mutex<Option<AppServerProcess>>);
 struct ProjectFolder {
     display_path: String,
     backend_path: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AttachmentFile {
+    display_path: String,
+    backend_path: String,
+    name: String,
+    kind: String,
 }
 
 #[tauri::command]
@@ -79,6 +106,61 @@ async fn pick_project_folder() -> Result<Option<ProjectFolder>, String> {
     }))
 }
 
+#[tauri::command]
+async fn pick_attachment_files() -> Result<Vec<AttachmentFile>, String> {
+    let files = rfd::AsyncFileDialog::new()
+        .set_title("Attach images or documents")
+        .pick_files()
+        .await
+        .unwrap_or_default();
+    prepare_attachment_files(
+        files
+            .into_iter()
+            .map(|file| file.path().to_path_buf())
+            .collect(),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn prepare_attachment_paths(paths: Vec<String>) -> Result<Vec<AttachmentFile>, String> {
+    prepare_attachment_files(paths.into_iter().map(PathBuf::from).collect()).await
+}
+
+async fn prepare_attachment_files(paths: Vec<PathBuf>) -> Result<Vec<AttachmentFile>, String> {
+    let mut attachments = Vec::new();
+    for path in paths {
+        if !path.is_file() {
+            continue;
+        }
+        let display_path = path.to_string_lossy().to_string();
+        let backend_path = platform::convert_host_path_to_backend(&display_path).await?;
+        let name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_else(|| display_path.clone());
+        attachments.push(AttachmentFile {
+            display_path,
+            backend_path,
+            name,
+            kind: attachment_kind_for_path(&path).to_string(),
+        });
+    }
+    Ok(attachments)
+}
+
+fn attachment_kind_for_path(path: &Path) -> &'static str {
+    match path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("png" | "jpg" | "jpeg" | "webp" | "gif") => "image",
+        _ => "document",
+    }
+}
+
 pub fn run() {
     tauri::Builder::default()
         .manage(AppServerState(Mutex::new(None)))
@@ -88,6 +170,8 @@ pub fn run() {
             shutdown_app_server,
             app_server_diagnostic,
             pick_project_folder,
+            pick_attachment_files,
+            prepare_attachment_paths,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {

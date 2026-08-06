@@ -1,9 +1,12 @@
 import { useLayoutEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 
+import { userMessagePresentation } from "../attachments.ts";
 import {
+  imageGenerationDataUrl,
   isUnknownItem,
   itemPayload,
+  mcpImageContent,
   patchChangeKindLabel,
   type ThreadItem,
 } from "../codex-types.ts";
@@ -24,6 +27,27 @@ export function ChatTranscript({ thread }: Props) {
     }
   }, [thread?.threadId, thread?.entries]);
 
+  useLayoutEffect(() => {
+    const transcript = transcriptRef.current;
+    if (!transcript) {
+      return;
+    }
+    const scrollAfterImageSettles = (event: Event) => {
+      if (!(event.target instanceof HTMLImageElement)) {
+        return;
+      }
+      requestAnimationFrame(() => {
+        transcript.scrollTop = transcript.scrollHeight;
+      });
+    };
+    transcript.addEventListener("load", scrollAfterImageSettles, true);
+    transcript.addEventListener("error", scrollAfterImageSettles, true);
+    return () => {
+      transcript.removeEventListener("load", scrollAfterImageSettles, true);
+      transcript.removeEventListener("error", scrollAfterImageSettles, true);
+    };
+  }, [thread?.threadId]);
+
   if (!thread) {
     return <div ref={transcriptRef} className="transcript transcript-empty">Select a thread to begin.</div>;
   }
@@ -42,8 +66,8 @@ export function ChatTranscript({ thread }: Props) {
         </div>
       )}
       {rows.map((row) =>
-        row.kind === "reasoning" ? (
-          <ReasoningCard key={row.key} entries={row.entries} />
+        row.kind === "activity" ? (
+          <ActivityCard key={row.key} entries={row.entries} />
         ) : (
           <TranscriptCard key={row.key} entry={row.entry} />
         ),
@@ -52,42 +76,24 @@ export function ChatTranscript({ thread }: Props) {
   );
 }
 
-function ReasoningCard({ entries }: { entries: Extract<TranscriptEntry, { kind: "item" }>[] }) {
-  const summaryParts = entries.flatMap((entry) => {
-    const reasoning = itemPayload(entry.item, "reasoning");
-    return reasoning?.summary ?? [];
-  }).filter((part) => part.trim().length > 0);
-  const contentParts = entries.flatMap((entry) => {
-    const reasoning = itemPayload(entry.item, "reasoning");
-    return reasoning?.content ?? [];
-  }).filter((part) => part.trim().length > 0);
-  const detailParts = [...summaryParts, ...contentParts];
-  const preview = compactReasoningPreview(summaryParts);
-
+function ActivityCard({ entries }: { entries: TranscriptEntry[] }) {
+  const inProgress = entries.some(
+    (entry) => entry.kind === "item" && !entry.completed,
+  );
+  const countLabel = `${entries.length} ${entries.length === 1 ? "update" : "updates"}`;
   return (
-    <details className="card card-reasoning">
-      <summary className="reasoning-summary">
-        <span className="card-label">Thinking</span>
-        <span className="reasoning-preview">{preview}</span>
+    <details className="card card-activity">
+      <summary className="activity-summary">
+        <span className="card-label">Activity</span>
+        <span className="activity-preview">{inProgress ? "Working…" : countLabel}</span>
       </summary>
-      <div className="reasoning-detail">
-        {detailParts.length > 0 ? (
-          detailParts.map((part, index) => <MarkdownBody key={index} text={part} />)
-        ) : (
-          <p className="card-body">No thinking details received.</p>
-        )}
+      <div className="activity-detail">
+        {entries.map((entry) => (
+          <TranscriptCard key={entry.key} entry={entry} />
+        ))}
       </div>
     </details>
   );
-}
-
-function compactReasoningPreview(parts: string[]): string {
-  const text = parts.join(" ").replace(/\s+/g, " ").trim();
-  if (!text) {
-    return "Working…";
-  }
-  const limit = 160;
-  return text.length <= limit ? text : `${text.slice(0, limit - 1).trimEnd()}…`;
 }
 
 function TranscriptCard({ entry }: { entry: TranscriptEntry }) {
@@ -117,14 +123,27 @@ function ItemCard({ item }: { item: ThreadItem }) {
 
   const userMessage = itemPayload(item, "userMessage");
   if (userMessage) {
-    const text = userMessage.content
-      .map((part) => (part.type === "text" ? part.text : ""))
-      .filter(Boolean)
-      .join("\n");
+    const presentation = userMessagePresentation(userMessage.content);
     return (
       <div className="card card-user">
         <div className="card-label">You</div>
-        <MarkdownBody text={text || "(attachment)"} />
+        {presentation.text ? <MarkdownBody text={presentation.text} /> : null}
+        {presentation.attachments.length > 0 ? (
+          <div className="message-attachments" aria-label="Attachments">
+            {presentation.attachments.map((attachment) => (
+              <span
+                className="attachment-chip"
+                key={`${attachment.kind}:${attachment.backendPath}`}
+                title={attachment.displayPath}
+              >
+                <span className="attachment-kind" aria-hidden="true">
+                  {attachment.kind === "image" ? "IMG" : "DOC"}
+                </span>
+                <span className="attachment-name">{attachment.name}</span>
+              </span>
+            ))}
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -135,6 +154,20 @@ function ItemCard({ item }: { item: ThreadItem }) {
       <div className="card card-agent">
         <div className="card-label">Sudhir-Codex</div>
         <MarkdownBody text={agentMessage.text} />
+      </div>
+    );
+  }
+
+  const reasoning = itemPayload(item, "reasoning");
+  if (reasoning) {
+    const parts = [...reasoning.summary, ...reasoning.content]
+      .filter((part) => part.trim().length > 0);
+    return (
+      <div className="card card-reasoning-detail">
+        <div className="card-label">Thinking</div>
+        {parts.length > 0
+          ? parts.map((part, index) => <MarkdownBody key={index} text={part} />)
+          : <p className="card-body">No thinking details received.</p>}
       </div>
     );
   }
@@ -185,12 +218,24 @@ function ItemCard({ item }: { item: ThreadItem }) {
 
   const mcp = itemPayload(item, "mcpToolCall");
   if (mcp) {
+    const images = mcpImageContent(mcp.result);
     return (
       <div className="card card-tool">
         <div className="card-label">
           Tool · {mcp.server} / {mcp.tool} · {mcp.status}
         </div>
         {mcp.error?.message ? <div className="card-body">{mcp.error.message}</div> : null}
+        {images.map((image, index) => (
+          <figure className="generated-image-frame" key={`${image.mimeType}:${index}`}>
+            <img
+              className="generated-image"
+              src={image.dataUrl}
+              alt={`Image returned by ${mcp.tool}`}
+              loading="lazy"
+              decoding="async"
+            />
+          </figure>
+        ))}
       </div>
     );
   }
@@ -213,9 +258,26 @@ function ItemCard({ item }: { item: ThreadItem }) {
 
   const imageGeneration = itemPayload(item, "imageGeneration");
   if (imageGeneration) {
+    const imageUrl = imageGenerationDataUrl(imageGeneration.result);
     return (
-      <div className="card card-tool">
+      <div className="card card-tool card-image-generation">
         <div className="card-label">Image generation · {imageGeneration.status}</div>
+        {imageUrl ? (
+          <figure className="generated-image-frame">
+            <img
+              className="generated-image"
+              src={imageUrl}
+              alt={imageGeneration.revisedPrompt ?? "Generated image"}
+              loading="lazy"
+              decoding="async"
+            />
+            {imageGeneration.revisedPrompt ? (
+              <figcaption className="generated-image-caption">
+                {imageGeneration.revisedPrompt}
+              </figcaption>
+            ) : null}
+          </figure>
+        ) : null}
       </div>
     );
   }

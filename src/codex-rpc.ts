@@ -13,6 +13,9 @@ import {
   type InitializeResponse,
   type JsonRpcError,
   type ServerRequestHandlerResult,
+  type TurnStartParams,
+  type TurnSteerParams,
+  type UserInput,
 } from "./codex-types.ts";
 
 export interface RpcTransport {
@@ -58,6 +61,49 @@ export class RpcError extends Error {
     this.code = code;
     this.data = data;
   }
+}
+
+export interface BuildTurnSubmissionOptions {
+  threadId: string;
+  input: UserInput[];
+  activeTurnId?: string | null;
+  model?: string | null;
+  effort?: string | null;
+  serviceTier?: string | null;
+}
+
+export type TurnSubmission =
+  | { method: "turn/start"; params: TurnStartParams }
+  | { method: "turn/steer"; params: TurnSteerParams };
+
+export function buildTurnSubmission({
+  threadId,
+  input,
+  activeTurnId,
+  model,
+  effort,
+  serviceTier,
+}: BuildTurnSubmissionOptions): TurnSubmission {
+  if (activeTurnId) {
+    return {
+      method: "turn/steer",
+      params: {
+        threadId,
+        input,
+        expectedTurnId: activeTurnId,
+      },
+    };
+  }
+  return {
+    method: "turn/start",
+    params: {
+      threadId,
+      input,
+      model,
+      effort,
+      serviceTier,
+    },
+  };
 }
 
 // Thread creation and resume can wait on plugin/MCP startup, and a turn can
@@ -141,6 +187,9 @@ export class RpcClient {
           name: CLIENT_NAME,
           title: CLIENT_TITLE,
           version: CLIENT_VERSION,
+        },
+        capabilities: {
+          mcpServerOpenaiFormElicitation: true,
         },
       },
     );

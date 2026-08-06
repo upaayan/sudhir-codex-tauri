@@ -4,6 +4,15 @@ import { createRoot } from "react-dom/client";
 import { App } from "./app.tsx";
 import "./app.css";
 import { ErrorBoundary } from "./components/error-boundary.tsx";
+import { parseThemePreference, resolveTheme, THEME_STORAGE_KEY } from "./theme.ts";
+
+const initialTheme = parseThemePreference(localStorage.getItem(THEME_STORAGE_KEY));
+const resolvedInitialTheme = resolveTheme(
+  initialTheme,
+  window.matchMedia("(prefers-color-scheme: dark)").matches,
+);
+document.documentElement.dataset.theme = resolvedInitialTheme;
+document.documentElement.style.colorScheme = resolvedInitialTheme;
 
 window.addEventListener("error", (event) => {
   try {

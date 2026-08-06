@@ -73,6 +73,7 @@ const models = [
 const state = {
   clientInfo: null,
   turnCounter: 0,
+  activeTurns: new Map(),
   outstandingServerRequests: new Map(),
   startedThreadIds: new Set(),
 };
@@ -234,6 +235,7 @@ async function handleRequest(message) {
       state.turnCounter += 1;
       const turnId = `turn-${state.turnCounter}`;
       const threadId = params?.threadId;
+      state.activeTurns.set(threadId, turnId);
       scheduleStream(threadId, turnId);
       return {
         turn: {
@@ -247,6 +249,22 @@ async function handleRequest(message) {
           durationMs: null,
         },
       };
+    }
+    case "turn/steer": {
+      const inputs = params?.input ?? [];
+      const activeTurnId = state.activeTurns.get(params?.threadId);
+      if (
+        !Array.isArray(inputs) ||
+        inputs.some((input) => !input || typeof input.type !== "string") ||
+        typeof params?.expectedTurnId !== "string" ||
+        params.expectedTurnId !== activeTurnId
+      ) {
+        return {
+          error: { code: -32600, message: "Invalid request: active turn does not match" },
+        };
+      }
+      log({ steeredTurnId: activeTurnId, input: inputs });
+      return { turnId: activeTurnId };
     }
     case "turn/interrupt":
       return { ok: true };
@@ -302,6 +320,9 @@ function scheduleStream(threadId, turnId) {
     });
   }, 50);
   setTimeout(() => {
+    if (state.activeTurns.get(threadId) === turnId) {
+      state.activeTurns.delete(threadId);
+    }
     send({
       jsonrpc: "2.0",
       method: "item/completed",

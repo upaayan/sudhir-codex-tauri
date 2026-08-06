@@ -21,6 +21,7 @@ import type {
   ReasoningSummaryTextDeltaNotification,
   Thread,
   ThreadItem,
+  ThreadNameUpdatedNotification,
   ThreadStatus,
   ThreadStatusChangedNotification,
   ThreadTokenUsage,
@@ -29,6 +30,7 @@ import type {
   TurnError,
   TurnStatus,
 } from "./codex-types.ts";
+import { selectedEffortForModel, speedTiersForModel } from "./model-settings.ts";
 
 // ---------------------------------------------------------------------------
 // Project persistence
@@ -134,6 +136,8 @@ export interface AppState {
   models: Model[];
   modelsLoading: boolean;
   selectedModel: string | null;
+  selectedReasoningEffort: string | null;
+  selectedServiceTier: string | null;
   rateLimits: AccountRateLimitsResponse | null;
   rateLimitsError: string | null;
   usage: AccountUsageResponse | null;
@@ -156,6 +160,8 @@ export function createInitialState(): AppState {
     models: [],
     modelsLoading: false,
     selectedModel: null,
+    selectedReasoningEffort: null,
+    selectedServiceTier: null,
     rateLimits: null,
     rateLimitsError: null,
     usage: null,
@@ -290,6 +296,8 @@ export type AppAction =
   | { type: "thread/hydrate"; thread: Thread }
   | { type: "models/replace"; models: Model[] }
   | { type: "model/select"; model: string | null }
+  | { type: "reasoningEffort/select"; effort: string | null }
+  | { type: "serviceTier/select"; serviceTier: string | null }
   | { type: "usage/rateLimits"; rateLimits: AccountRateLimitsResponse | null; error: string | null }
   | { type: "usage/account"; usage: AccountUsageResponse | null; error: string | null }
   | { type: "unsupportedRequest"; method: string; threadId: string | null; turnId?: string | null; requestId: string | number }
@@ -309,9 +317,18 @@ export type AppAction =
         | "item/reasoning/summaryPartAdded"
         | "thread/tokenUsage/updated"
         | "thread/status/changed"
+        | "thread/name/updated"
         | "error";
       payload: unknown;
     };
+
+export function visibleActionFailure(action: string, error: unknown): AppAction {
+  return {
+    type: "connection/status",
+    connected: true,
+    diagnostic: `${action}: ${String(error)}`,
+  };
+}
 
 export function stateReducer(state: AppState, action: AppAction): AppState {
   switch (action.type) {
@@ -393,14 +410,44 @@ export function stateReducer(state: AppState, action: AppAction): AppState {
       };
     }
     case "models/replace":
+      {
+        const selectedModel = state.selectedModel ?? defaultModelId(action.models);
+        const selected = action.models.find((model) => model.model === selectedModel);
+        const selectedServiceTier = selectedServiceTierForModel(
+          selected,
+          state.selectedServiceTier,
+        );
       return {
         ...state,
         models: action.models,
         modelsLoading: false,
-        selectedModel: state.selectedModel ?? defaultModelId(action.models),
+        selectedModel,
+        selectedReasoningEffort: selectedEffortForModel(
+          selected,
+          state.selectedReasoningEffort,
+        ),
+        selectedServiceTier,
       };
-    case "model/select":
-      return { ...state, selectedModel: action.model };
+      }
+    case "model/select": {
+      const selected = state.models.find((model) => model.model === action.model);
+      return {
+        ...state,
+        selectedModel: action.model,
+        selectedReasoningEffort: selectedEffortForModel(
+          selected,
+          state.selectedReasoningEffort,
+        ),
+        selectedServiceTier: selectedServiceTierForModel(
+          selected,
+          state.selectedServiceTier,
+        ),
+      };
+    }
+    case "reasoningEffort/select":
+      return { ...state, selectedReasoningEffort: action.effort };
+    case "serviceTier/select":
+      return { ...state, selectedServiceTier: action.serviceTier };
     case "usage/rateLimits":
       return {
         ...state,
@@ -443,6 +490,19 @@ export function stateReducer(state: AppState, action: AppAction): AppState {
 
 function defaultModelId(models: Model[]): string | null {
   return models.find((model) => model.isDefault)?.model ?? models[0]?.model ?? null;
+}
+
+function selectedServiceTierForModel(
+  model: Model | undefined,
+  currentTier: string | null,
+): string | null {
+  const tiers = speedTiersForModel(model);
+  if (currentTier && tiers.some((tier) => tier.id === currentTier)) {
+    return currentTier;
+  }
+  return tiers.some((tier) => tier.id === model?.defaultServiceTier)
+    ? (model?.defaultServiceTier ?? null)
+    : null;
 }
 
 function applyNotification(
@@ -590,6 +650,22 @@ function applyNotification(
         },
       };
     }
+    case "thread/name/updated": {
+      const notification = payload as ThreadNameUpdatedNotification;
+      const threadName = notification.threadName ?? null;
+      return {
+        ...next,
+        threads: next.threads.map((candidate) =>
+          candidate.id === threadId ? { ...candidate, name: threadName } : candidate),
+        threadsBy: {
+          ...next.threadsBy,
+          [threadId]: {
+            ...thread,
+            thread: thread.thread ? { ...thread.thread, name: threadName } : null,
+          },
+        },
+      };
+    }
     case "error": {
       const notification = payload as ErrorNotification;
       return {
@@ -636,6 +712,7 @@ const NOTIFICATION_ACTIONS: Record<string, AppAction["type"]> = {
   "item/reasoning/summaryPartAdded": "notification",
   "thread/tokenUsage/updated": "notification",
   "thread/status/changed": "notification",
+  "thread/name/updated": "notification",
   "error": "notification",
 };
 
@@ -651,6 +728,7 @@ const NOTIFICATION_THREAD_ID_FIELDS: Record<string, string> = {
   "item/reasoning/summaryPartAdded": "threadId",
   "thread/tokenUsage/updated": "threadId",
   "thread/status/changed": "threadId",
+  "thread/name/updated": "threadId",
   "error": "threadId",
 };
 
@@ -666,6 +744,7 @@ const NOTIFICATION_TURN_ID_FIELDS: Record<string, string> = {
   "item/reasoning/summaryPartAdded": "turnId",
   "thread/tokenUsage/updated": "turnId",
   "thread/status/changed": "threadId",
+  "thread/name/updated": "threadId",
   "error": "threadId",
 };
 

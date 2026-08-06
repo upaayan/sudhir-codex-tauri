@@ -7,8 +7,11 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/codex-rpc.test.ts tests/codex-state.test.ts tests/transcript-groups.test.ts",
-    "tauri": "tauri"
+    "test": "node --test tests/attachments.test.ts tests/codex-rpc.test.ts tests/codex-state.test.ts tests/composer-state.test.ts tests/desktop-config.test.ts tests/model-settings.test.ts tests/theme.test.ts tests/transcript-groups.test.ts",
+    "tauri": "tauri",
+    "tauri:build:mac": "tauri build --target aarch64-apple-darwin",
+    "tauri:sign:mac": "node scripts/sign-macos-candidate.mjs",
+    "tauri:package:mac": "pnpm tauri:build:mac && pnpm tauri:sign:mac"
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.1",

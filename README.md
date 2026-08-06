@@ -8,8 +8,14 @@ distribution).
 
 What it provides: favorite projects, stored chat-thread listing/opening/
 continuation and new-thread creation, per-next-turn model selection from the
-`sudhir-codex` catalog, ChatGPT/account and per-thread usage display, and the
-inline approvals and `request_user_input` responses a chat turn needs.
+`sudhir-codex` catalog, backend-supported reasoning Effort for every model,
+GPT-only speed/service-tier selection,
+ChatGPT/account and per-thread usage display, automatic thread naming,
+active-turn conversation steering, initially collapsed per-turn Activity,
+an auto-growing composer, native zoom shortcuts, image/document picker and drag/drop
+attachments, generated-image and MCP-image display, System/Light/Dark themes,
+and the inline approvals, `request_user_input`, and browser-origin elicitation
+responses a chat turn needs.
 
 `sudhir-codex` remains the source of truth for threads, credentials,
 configuration, models, tools, MCP servers, skills, agents, sandboxing, and
@@ -31,6 +37,11 @@ model execution. This app never talks to the private gateway directly.
 
 ## Status
 
-Initial implementation complete; CI builds and the real Windows/WSL smoke
-check are in progress. See the local debate-loop records under
-`documents/plan-audit-implementation/` (gitignored).
+Initial implementation and baseline macOS/Windows CI builds are complete. The
+current signed Mac candidate is installed for owner testing. The matching
+Windows NSIS candidate has been built and verified locally but is not installed;
+no new Actions run is authorized. Browser control is intentionally unsupported
+on Windows, and the Windows app has no dependency on the Windows Codex or
+ChatGPT desktop apps.
+See the local debate-loop records under `documents/plan-audit-implementation/`
+(gitignored).

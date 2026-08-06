@@ -13,14 +13,42 @@ import {
   serializeProjects,
   stateReducer,
   threadStatusText,
+  visibleActionFailure,
 } from "../src/codex-state.ts";
 import {
+  imageGenerationDataUrl,
   itemPayload,
+  mcpImageContent,
   patchChangeKindLabel,
   type Thread,
   type ThreadItem,
   type ThreadTokenUsage,
+  type Model,
 } from "../src/codex-types.ts";
+
+test("image generation results become displayable PNG data URLs", () => {
+  assert.equal(imageGenerationDataUrl(""), null);
+  assert.equal(imageGenerationDataUrl("  cG5n  "), "data:image/png;base64,cG5n");
+  assert.equal(
+    imageGenerationDataUrl("data:image/webp;base64,d2VicA=="),
+    "data:image/webp;base64,d2VicA==",
+  );
+});
+
+test("MCP image content becomes safe displayable data URLs", () => {
+  assert.deepEqual(
+    mcpImageContent({
+      content: [
+        { type: "text", text: "screenshot" },
+        { type: "image", data: "cG5n", mimeType: "image/png" },
+        { type: "image", data: "PHN2Zz4=", mimeType: "image/svg+xml" },
+        { type: "image", data: "not base64!", mimeType: "image/png" },
+      ],
+    }),
+    [{ dataUrl: "data:image/png;base64,cG5n", mimeType: "image/png" }],
+  );
+  assert.deepEqual(mcpImageContent(null), []);
+});
 
 function thread(id: string, cwd = "/home/test/project-a"): Thread {
   return {
@@ -45,6 +73,32 @@ function thread(id: string, cwd = "/home/test/project-a"): Thread {
 
 function agentItem(id: string, text = ""): ThreadItem {
   return { type: "agentMessage", id, text, phase: null };
+}
+
+function model(
+  id: string,
+  serviceTierIds: string[] = [],
+  effortIds: string[] = ["low", "medium", "high"],
+  defaultReasoningEffort = "medium",
+): Model {
+  return {
+    id,
+    model: id,
+    displayName: id,
+    description: id,
+    hidden: false,
+    supportedReasoningEfforts: effortIds.map((reasoningEffort) => ({
+      reasoningEffort,
+      description: `${reasoningEffort} reasoning`,
+    })),
+    defaultReasoningEffort,
+    isDefault: id === "gpt-5.6-sol",
+    serviceTiers: serviceTierIds.map((tier) => ({
+      id: tier,
+      name: tier === "priority" ? "Fast" : tier,
+      description: "",
+    })),
+  };
 }
 
 test("project persistence round-trips and rejects malformed input", () => {
@@ -109,6 +163,55 @@ test("project add/remove/select reducer behavior", () => {
   assert.equal(state.projects.length, 0);
   assert.equal(state.selectedProjectBackendPath, null);
   assert.equal(state.threads.length, 0);
+});
+
+test("action failures become visible connection diagnostics without disconnecting", () => {
+  const action = visibleActionFailure(
+    "failed to steer turn",
+    new Error("ExpectedTurnMismatch"),
+  );
+  assert.deepEqual(action, {
+    type: "connection/status",
+    connected: true,
+    diagnostic: "failed to steer turn: Error: ExpectedTurnMismatch",
+  });
+
+  const state = stateReducer(createInitialState(), action);
+  assert.equal(state.connected, true);
+  assert.equal(state.diagnostic, "failed to steer turn: Error: ExpectedTurnMismatch");
+});
+
+test("effort defaults per model and resets only when the next model cannot use it", () => {
+  let state = createInitialState();
+  state = stateReducer(state, {
+    type: "models/replace",
+    models: [
+      model("gpt-5.6-sol", ["priority"], ["low", "medium", "high", "xhigh"], "medium"),
+      model("pi-xai/grok-4.5", [], ["low", "high"], "high"),
+      model("pi-zai/glm-5.2", [], ["high", "max"], "high"),
+    ],
+  });
+  assert.equal(state.selectedReasoningEffort, "medium");
+
+  state = stateReducer(state, { type: "reasoningEffort/select", effort: "xhigh" });
+  state = stateReducer(state, { type: "model/select", model: "pi-xai/grok-4.5" });
+  assert.equal(state.selectedReasoningEffort, "high");
+
+  state = stateReducer(state, { type: "model/select", model: "pi-zai/glm-5.2" });
+  assert.equal(state.selectedReasoningEffort, "high");
+});
+
+test("speed tier selection resets for a non-GPT model even if a tier is present", () => {
+  let state = createInitialState();
+  state = stateReducer(state, {
+    type: "models/replace",
+    models: [model("gpt-5.6-sol", ["priority"]), model("pi-xai/grok-4.5", ["priority"])],
+  });
+  state = stateReducer(state, { type: "serviceTier/select", serviceTier: "priority" });
+  assert.equal(state.selectedServiceTier, "priority");
+
+  state = stateReducer(state, { type: "model/select", model: "pi-xai/grok-4.5" });
+  assert.equal(state.selectedServiceTier, null);
 });
 
 test("thread hydration keeps persisted items in order", () => {
@@ -350,6 +453,18 @@ test("classifyNotification routes known methods and ignores unknown ones", () =>
   assert.equal(started?.turnId, "turn-9");
   assert.equal(classifyNotification("item/newFancy/delta", {}), null);
   assert.equal(classifyNotification("turn/completed", {}), null);
+});
+
+test("thread name notifications update the hydrated thread", () => {
+  let state = createInitialState();
+  state = stateReducer(state, { type: "thread/hydrate", thread: thread("t1") });
+  const action = classifyNotification("thread/name/updated", {
+    threadId: "t1",
+    threadName: "Grok gateway debugging",
+  });
+  assert.ok(action);
+  state = stateReducer(state, action);
+  assert.equal(state.threadsBy.t1?.thread?.name, "Grok gateway debugging");
 });
 
 test("error notification marks the turn failed with a visible message", () => {

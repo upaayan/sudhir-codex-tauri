@@ -9,7 +9,8 @@
 - [DEPLOY-MACOS.md](DEPLOY-MACOS.md) — preflight, artifact inspection,
   installation, Gatekeeper, smoke test, rollback, removal.
 - [DEPLOY-WINDOWS.md](DEPLOY-WINDOWS.md) — WSL preflight, NSIS install,
-  project-path expectations, real WSL smoke test, rollback, removal.
+  project-path expectations, the intentional Windows browser-control boundary,
+  desktop-app independence, real WSL smoke test, rollback, removal.
 
 The local debate-loop records (plan, audit, implementation) live under
 `documents/plan-audit-implementation/`, which is gitignored and never pushed.
