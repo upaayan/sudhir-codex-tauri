@@ -68,6 +68,8 @@ export interface InitializeResponse {
 export interface ThreadListParams {
   cursor?: string | null;
   limit?: number | null;
+  sortKey?: "created_at" | "updated_at" | "recency_at" | null;
+  sortDirection?: "asc" | "desc" | null;
   cwd?: string | string[] | null;
 }
 
@@ -379,8 +381,20 @@ export type CommandExecutionStatus =
 
 export interface FileUpdateChange {
   path: string;
-  kind: string;
+  kind: PatchChangeKind;
   diff: string;
+}
+
+export type PatchChangeKind =
+  | { type: "add" }
+  | { type: "delete" }
+  | { type: "update"; move_path: string | null };
+
+export function patchChangeKindLabel(kind: PatchChangeKind): string {
+  if (kind.type === "update" && kind.move_path) {
+    return `update → ${kind.move_path}`;
+  }
+  return kind.type;
 }
 
 export type PatchApplyStatus =

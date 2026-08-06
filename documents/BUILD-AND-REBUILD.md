@@ -50,7 +50,7 @@ pnpm build
 
 ```bash
 pnpm test
-# runs: node --test tests/codex-rpc.test.ts tests/codex-state.test.ts
+# runs the RPC/state tests plus transcript grouping regression tests
 ```
 
 `tests/codex-rpc.test.ts` contains the fake app-server integration checks and
@@ -104,10 +104,11 @@ environment override for development tests is
 After a `sudhir-codex` backend upgrade, re-verify the wire contract with the
 read-only live check above, then reconcile `src/codex-types.ts` against the
 installed protocol source (`codex-rs/app-server-protocol/src`): method names,
-payload field names (camelCase), and the externally tagged `ThreadItem`
-enum. Keep the Node-tested modules on erasable TypeScript only (no enums,
-namespaces, constructor parameter properties), explicit `.ts` import
-extensions, and no `.tsx` imports.
+payload field names (camelCase), and the internally tagged `ThreadItem` enum
+(`{ type: "...", ... }`). Nested fields may use their own tagged unions (for
+example, `FileUpdateChange.kind`). Keep the Node-tested modules on erasable
+TypeScript only (no enums, namespaces, constructor parameter properties),
+explicit `.ts` import extensions, and no `.tsx` imports.
 
 ## Icons
 

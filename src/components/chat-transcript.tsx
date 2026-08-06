@@ -1,37 +1,93 @@
+import { useLayoutEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 
 import {
   isUnknownItem,
-  itemId,
   itemPayload,
+  patchChangeKindLabel,
   type ThreadItem,
 } from "../codex-types.ts";
 import type { ThreadState, TranscriptEntry } from "../codex-state.ts";
+import { groupTranscriptEntries } from "../transcript-groups.ts";
 
 interface Props {
   thread: ThreadState | null;
 }
 
 export function ChatTranscript({ thread }: Props) {
+  const transcriptRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const transcript = transcriptRef.current;
+    if (transcript) {
+      transcript.scrollTop = transcript.scrollHeight;
+    }
+  }, [thread?.threadId, thread?.entries]);
+
   if (!thread) {
-    return <div className="transcript transcript-empty">Select a thread to begin.</div>;
+    return <div ref={transcriptRef} className="transcript transcript-empty">Select a thread to begin.</div>;
   }
   if (thread.entries.length === 0) {
-    return <div className="transcript transcript-empty">No messages yet.</div>;
+    return <div ref={transcriptRef} className="transcript transcript-empty">No messages yet.</div>;
   }
+
+  const rows = groupTranscriptEntries(thread.entries);
+
   return (
-    <div className="transcript">
+    <div ref={transcriptRef} className="transcript">
       {thread.turnError && thread.turnStatus === "failed" && (
         <div className="card card-error">
           <div className="card-label">Turn failed</div>
           <div className="card-body">{thread.turnError.message}</div>
         </div>
       )}
-      {thread.entries.map((entry) => (
-        <TranscriptCard key={entry.kind === "unsupportedRequest" ? String(entry.requestId) : itemId(entry.item)} entry={entry} />
-      ))}
+      {rows.map((row) =>
+        row.kind === "reasoning" ? (
+          <ReasoningCard key={row.key} entries={row.entries} />
+        ) : (
+          <TranscriptCard key={row.key} entry={row.entry} />
+        ),
+      )}
     </div>
   );
+}
+
+function ReasoningCard({ entries }: { entries: Extract<TranscriptEntry, { kind: "item" }>[] }) {
+  const summaryParts = entries.flatMap((entry) => {
+    const reasoning = itemPayload(entry.item, "reasoning");
+    return reasoning?.summary ?? [];
+  }).filter((part) => part.trim().length > 0);
+  const contentParts = entries.flatMap((entry) => {
+    const reasoning = itemPayload(entry.item, "reasoning");
+    return reasoning?.content ?? [];
+  }).filter((part) => part.trim().length > 0);
+  const detailParts = [...summaryParts, ...contentParts];
+  const preview = compactReasoningPreview(summaryParts);
+
+  return (
+    <details className="card card-reasoning">
+      <summary className="reasoning-summary">
+        <span className="card-label">Thinking</span>
+        <span className="reasoning-preview">{preview}</span>
+      </summary>
+      <div className="reasoning-detail">
+        {detailParts.length > 0 ? (
+          detailParts.map((part, index) => <MarkdownBody key={index} text={part} />)
+        ) : (
+          <p className="card-body">No thinking details received.</p>
+        )}
+      </div>
+    </details>
+  );
+}
+
+function compactReasoningPreview(parts: string[]): string {
+  const text = parts.join(" ").replace(/\s+/g, " ").trim();
+  if (!text) {
+    return "Working…";
+  }
+  const limit = 160;
+  return text.length <= limit ? text : `${text.slice(0, limit - 1).trimEnd()}…`;
 }
 
 function TranscriptCard({ entry }: { entry: TranscriptEntry }) {
@@ -83,20 +139,6 @@ function ItemCard({ item }: { item: ThreadItem }) {
     );
   }
 
-  const reasoning = itemPayload(item, "reasoning");
-  if (reasoning) {
-    return (
-      <details className="card card-reasoning">
-        <summary className="card-label">Reasoning</summary>
-        {reasoning.summary.map((part, index) => (
-          <p key={index} className="card-body">
-            {part}
-          </p>
-        ))}
-      </details>
-    );
-  }
-
   const command = itemPayload(item, "commandExecution");
   if (command) {
     return (
@@ -121,7 +163,8 @@ function ItemCard({ item }: { item: ThreadItem }) {
         {fileChange.changes.map((change) => (
           <div key={change.path} className="file-change">
             <div className="file-change-path">
-              {change.path} <span className="file-change-kind">({change.kind})</span>
+              {change.path}{" "}
+              <span className="file-change-kind">({patchChangeKindLabel(change.kind)})</span>
             </div>
             {change.diff ? <pre className="card-output">{change.diff}</pre> : null}
           </div>

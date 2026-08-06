@@ -35,6 +35,8 @@ const EXIT_EVENT = "app-server://exit";
 export function App() {
   const [state, dispatch] = useReducer(stateReducer, undefined, createInitialState);
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
+  const [projectThreads, setProjectThreads] = useState<Record<string, Thread[]>>({});
+  const [recentThreads, setRecentThreads] = useState<Thread[]>([]);
   const rpcRef = useRef<RpcClient | null>(null);
   const pendingResolvers = useRef(
     new Map<string | number, (outcome: ServerRequestHandlerResult) => void>(),
@@ -63,8 +65,8 @@ export function App() {
     }
   }, [dispatch]);
 
-  const loadThreads = useCallback(
-    async (backendPath: string, append: boolean) => {
+  const loadProjectThreads = useCallback(
+    async (backendPath: string) => {
       const client = rpcRef.current;
       if (!client) {
         return;
@@ -72,16 +74,26 @@ export function App() {
       const result = (await client.request("thread/list", {
         cwd: backendPath,
         limit: 50,
-      })) as { data: Thread[]; nextCursor: string | null };
-      dispatch({
-        type: "threads/replace",
-        threads: result.data,
-        cursor: result.nextCursor,
-        append,
-      });
+        sortKey: "recency_at",
+        sortDirection: "desc",
+      })) as { data: Thread[] };
+      setProjectThreads((current) => ({ ...current, [backendPath]: result.data }));
     },
-    [dispatch],
+    [],
   );
+
+  const loadRecentThreads = useCallback(async () => {
+    const client = rpcRef.current;
+    if (!client) {
+      return;
+    }
+    const result = (await client.request("thread/list", {
+      limit: 50,
+      sortKey: "recency_at",
+      sortDirection: "desc",
+    })) as { data: Thread[] };
+    setRecentThreads(result.data);
+  }, []);
 
   useEffect(() => {
     let unlistenMessage: UnlistenFn | undefined;
@@ -139,6 +151,7 @@ export function App() {
           type: "unsupportedRequest",
           method,
           threadId: typeof record.threadId === "string" ? record.threadId : null,
+          turnId: typeof record.turnId === "string" ? record.turnId : null,
           requestId,
         });
       },
@@ -200,7 +213,6 @@ export function App() {
     });
     if (persisted.lastProjectId) {
       dispatch({ type: "project/select", backendPath: persisted.lastProjectId });
-      void loadThreads(persisted.lastProjectId, false);
     }
 
     void start();
@@ -213,7 +225,7 @@ export function App() {
       rpcRef.current = null;
       void invoke("shutdown_app_server").catch(() => undefined);
     };
-  }, [dispatch, loadModels, loadThreads, loadUsage]);
+  }, [dispatch, loadModels, loadUsage]);
 
   useEffect(() => {
     localStorage.setItem(
@@ -225,6 +237,16 @@ export function App() {
       }),
     );
   }, [state.projects, state.lastProjectId]);
+
+  useEffect(() => {
+    if (!state.connected) {
+      return;
+    }
+    void Promise.allSettled([
+      ...state.projects.map((project) => loadProjectThreads(project.backendPath)),
+      loadRecentThreads(),
+    ]);
+  }, [state.connected, state.projects, loadProjectThreads, loadRecentThreads]);
 
   const selectedThread = state.selectedThreadId
     ? (state.threadsBy[state.selectedThreadId] ?? null)
@@ -243,32 +265,37 @@ export function App() {
       type: "project/add",
       project: { name, pickerPath: folder.displayPath, backendPath: folder.backendPath },
     });
-    void loadThreads(folder.backendPath, false);
-  }, [dispatch, loadThreads]);
+  }, [dispatch]);
 
   const handleSelectProject = useCallback(
     (backendPath: string) => {
       dispatch({ type: "project/select", backendPath });
-      void loadThreads(backendPath, false);
     },
-    [dispatch, loadThreads],
+    [dispatch],
   );
 
-  const handleNewThread = useCallback(async () => {
+  const handleNewThread = useCallback(async (backendPath: string) => {
     const client = rpcRef.current;
-    if (!client || !state.selectedProjectBackendPath) {
+    if (!client) {
       return;
     }
+    dispatch({ type: "project/select", backendPath });
     const result = (await client.request("thread/start", {
       model: state.selectedModel,
-      cwd: state.selectedProjectBackendPath,
+      cwd: backendPath,
     })) as { thread: Thread };
+    setProjectThreads((current) => ({
+      ...current,
+      [backendPath]: upsertNewestThread(current[backendPath] ?? [], result.thread),
+    }));
+    setRecentThreads((current) => upsertNewestThread(current, result.thread));
     dispatch({ type: "thread/hydrate", thread: result.thread });
     dispatch({ type: "thread/select", threadId: result.thread.id });
-  }, [state.selectedProjectBackendPath, state.selectedModel, dispatch]);
+  }, [state.selectedModel, dispatch]);
 
   const handleSelectThread = useCallback(
-    async (threadId: string) => {
+    async (threadId: string, backendPath: string) => {
+      dispatch({ type: "project/select", backendPath });
       dispatch({ type: "thread/select", threadId });
       const client = rpcRef.current;
       if (!client) {
@@ -297,11 +324,19 @@ export function App() {
         return;
       }
       const threadId = state.selectedThreadId;
+      const backendPath = state.selectedProjectBackendPath;
       const result = (await client.request("turn/start", {
         threadId: state.selectedThreadId,
         input: [{ type: "text", text }],
         model: state.selectedModel,
       })) as { turn: { id: string } };
+      if (backendPath) {
+        setProjectThreads((current) => ({
+          ...current,
+          [backendPath]: promoteThread(current[backendPath] ?? [], threadId),
+        }));
+      }
+      setRecentThreads((current) => promoteThread(current, threadId));
       dispatch({
         type: "notification",
         method: "turn/started",
@@ -322,7 +357,7 @@ export function App() {
         },
       });
     },
-    [state.selectedThreadId, state.selectedModel, dispatch],
+    [state.selectedThreadId, state.selectedModel, state.selectedProjectBackendPath, dispatch],
   );
 
   const handleInterrupt = useCallback(async () => {
@@ -336,12 +371,6 @@ export function App() {
       turnId: thread.turnId,
     });
   }, [state.selectedThreadId, state.threadsBy]);
-
-  const handleLoadMore = useCallback(() => {
-    if (state.selectedProjectBackendPath && state.threadsCursor) {
-      void loadThreads(state.selectedProjectBackendPath, true);
-    }
-  }, [state.selectedProjectBackendPath, state.threadsCursor, loadThreads]);
 
   const resolveRequest = useCallback(
     (requestId: string | number, outcome: ServerRequestHandlerResult) => {
@@ -360,11 +389,12 @@ export function App() {
     <div className="app-shell">
       <ProjectThreadSidebar
         state={state}
+        projectThreads={projectThreads}
+        recentThreads={recentThreads}
         onAddProject={handleAddProject}
         onSelectProject={handleSelectProject}
         onNewThread={handleNewThread}
         onSelectThread={handleSelectThread}
-        onLoadMore={handleLoadMore}
       />
       <main className="main-area">
         {state.diagnostic && (
@@ -409,6 +439,15 @@ export function App() {
       </aside>
     </div>
   );
+}
+
+function upsertNewestThread(threads: Thread[], thread: Thread): Thread[] {
+  return [thread, ...threads.filter((candidate) => candidate.id !== thread.id)];
+}
+
+function promoteThread(threads: Thread[], threadId: string): Thread[] {
+  const thread = threads.find((candidate) => candidate.id === threadId);
+  return thread ? upsertNewestThread(threads, thread) : threads;
 }
 
 function requestLabel(method: string, params: unknown): string {

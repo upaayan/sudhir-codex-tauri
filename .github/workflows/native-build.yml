@@ -36,7 +36,7 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
       - name: TypeScript unit and fake app-server integration tests
-        run: node --test tests/codex-rpc.test.ts tests/codex-state.test.ts
+        run: pnpm test
       - name: Typecheck
         run: pnpm typecheck
       - name: Rust tests
@@ -74,7 +74,7 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
       - name: TypeScript unit and fake app-server integration tests
-        run: node --test tests/codex-rpc.test.ts tests/codex-state.test.ts
+        run: pnpm test
       - name: Typecheck
         run: pnpm typecheck
       - name: Rust tests (including WSL launch-spec tests)

@@ -95,6 +95,7 @@ export function storageKey(): string {
 export interface ItemEntry {
   kind: "item";
   key: string;
+  turnId: string | null;
   item: ThreadItem;
   completed: boolean;
 }
@@ -102,6 +103,7 @@ export interface ItemEntry {
 export interface UnsupportedRequestEntry {
   key: string;
   kind: "unsupportedRequest";
+  turnId: string | null;
   method: string;
   requestId: string | number;
 }
@@ -290,7 +292,7 @@ export type AppAction =
   | { type: "model/select"; model: string | null }
   | { type: "usage/rateLimits"; rateLimits: AccountRateLimitsResponse | null; error: string | null }
   | { type: "usage/account"; usage: AccountUsageResponse | null; error: string | null }
-  | { type: "unsupportedRequest"; method: string; threadId: string | null; requestId: string | number }
+  | { type: "unsupportedRequest"; method: string; threadId: string | null; turnId?: string | null; requestId: string | number }
   | {
       type: "notification";
       threadId: string;
@@ -374,7 +376,7 @@ export function stateReducer(state: AppState, action: AppAction): AppState {
           if (entries.some((e) => e.kind !== "unsupportedRequest" && entryKey(e.item) === entryKey(item))) {
             continue;
           }
-          entries.push({ kind: "item", key: entryKey(item), item, completed: true });
+          entries.push({ kind: "item", key: entryKey(item), turnId: turn.id, item, completed: true });
         }
       }
       return {
@@ -420,6 +422,7 @@ export function stateReducer(state: AppState, action: AppAction): AppState {
       const entry: UnsupportedRequestEntry = {
         key: `unsupported:${String(action.requestId)}`,
         kind: "unsupportedRequest",
+        turnId: action.turnId ?? null,
         method: action.method,
         requestId: action.requestId,
       };
@@ -481,9 +484,9 @@ function applyNotification(
       );
       const entries = [...thread.entries];
       if (existingIndex >= 0) {
-        entries[existingIndex] = { kind: "item", key, item: notification.item, completed: false };
+        entries[existingIndex] = { kind: "item", key, turnId, item: notification.item, completed: false };
       } else {
-        entries.push({ kind: "item", key, item: notification.item, completed: false });
+        entries.push({ kind: "item", key, turnId, item: notification.item, completed: false });
       }
       return {
         ...next,
@@ -722,11 +725,12 @@ export function formatThreadUsage(usage: ThreadTokenUsage | null): string {
   if (!usage) {
     return "no token data yet";
   }
-  const total = formatTokens(usage.total?.totalTokens);
+  const activeContext = formatTokens(usage.last?.totalTokens);
   const context = usage.modelContextWindow
     ? ` / ${formatTokens(usage.modelContextWindow)} context`
     : "";
-  return `${total} tokens${context}`;
+  const cumulative = formatTokens(usage.total?.totalTokens);
+  return `${activeContext}${context} · ${cumulative} cumulative`;
 }
 
 export function threadStatusText(status: ThreadStatus | string | null): string {

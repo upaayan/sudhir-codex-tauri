@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
-    "test": "node --test tests/codex-rpc.test.ts tests/codex-state.test.ts",
+    "test": "node --test tests/codex-rpc.test.ts tests/codex-state.test.ts tests/transcript-groups.test.ts",
     "tauri": "tauri"
   },
   "dependencies": {

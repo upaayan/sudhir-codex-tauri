@@ -16,6 +16,7 @@ import {
 } from "../src/codex-state.ts";
 import {
   itemPayload,
+  patchChangeKindLabel,
   type Thread,
   type ThreadItem,
   type ThreadTokenUsage,
@@ -139,6 +140,7 @@ test("thread hydration keeps persisted items in order", () => {
   const threadState = state.threadsBy["t1"]!;
   assert.equal(threadState.entries.length, 2);
   assert.equal(threadState.entries[0]!.kind, "item");
+  assert.equal(threadState.entries[0]!.turnId, "turn-1");
   assert.equal(itemPayload(findEntry(threadState, "a1")!.item, "agentMessage")?.text, "persisted reply");
 });
 
@@ -184,6 +186,7 @@ test("streamed agent deltas and completion update the item in place", () => {
   });
   const entry = findEntry(state.threadsBy["t1"]!, "a1")!;
   assert.equal(entry.completed, true);
+  assert.equal(entry.turnId, "turn-1");
   assert.equal(itemPayload(entry.item, "agentMessage")?.text, "Hello world");
 });
 
@@ -477,7 +480,7 @@ test("token usage notification updates thread usage", () => {
     payload: { threadId: "t1", turnId: "turn-1", tokenUsage: usage },
   });
   assert.equal(state.threadsBy["t1"]!.tokenUsage?.total.totalTokens, 100);
-  assert.equal(formatThreadUsage(state.threadsBy["t1"]!.tokenUsage), "100 tokens / 200,000 context");
+  assert.equal(formatThreadUsage(state.threadsBy["t1"]!.tokenUsage), "100 / 200,000 context · 100 cumulative");
   assert.equal(formatThreadUsage(null), "no token data yet");
 });
 
@@ -491,6 +494,14 @@ test("usage formatting helpers", () => {
   assert.equal(formatRateLimitWindow(null), "unavailable");
   assert.equal(threadStatusText({ active: { activeFlags: ["waitingOnUserInput"] } }), "active (waitingOnUserInput)");
   assert.equal(threadStatusText("idle"), "idle");
+});
+
+test("file change kind formatting handles real tagged wire objects", () => {
+  assert.equal(patchChangeKindLabel({ type: "add" }), "add");
+  assert.equal(
+    patchChangeKindLabel({ type: "update", move_path: "renamed.txt" }),
+    "update → renamed.txt",
+  );
 });
 
 test("appends thread status changes onto hydrated threads", () => {
