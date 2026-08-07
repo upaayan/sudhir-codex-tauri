@@ -8,9 +8,10 @@
   the rebuild checklist.
 - [DEPLOY-MACOS.md](DEPLOY-MACOS.md) — preflight, artifact inspection,
   installation, Gatekeeper, smoke test, rollback, removal.
-- [DEPLOY-WINDOWS.md](DEPLOY-WINDOWS.md) — WSL preflight, NSIS install,
-  project-path expectations, the intentional Windows browser-control boundary,
-  desktop-app independence, real WSL smoke test, rollback, removal.
+- [DEPLOY-WINDOWS.md](DEPLOY-WINDOWS.md) — exact staged S3-relay update,
+  Windows signing rule, Tauri NSIS hash trap, WSL preflight, project-path
+  expectations, the intentional browser-control boundary, launch/relaunch
+  smoke gates, rollback, and removal.
 
 The local debate-loop records (plan, audit, implementation) live under
 `documents/plan-audit-implementation/`, which is gitignored and never pushed.

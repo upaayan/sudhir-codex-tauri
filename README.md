@@ -37,11 +37,14 @@ model execution. This app never talks to the private gateway directly.
 
 ## Status
 
-Initial implementation and baseline macOS/Windows CI builds are complete. The
-current signed Mac candidate is installed for owner testing. The matching
-Windows NSIS candidate has been built and verified locally but is not installed;
-no new Actions run is authorized. Browser control is intentionally unsupported
-on Windows, and the Windows app has no dependency on the Windows Codex or
-ChatGPT desktop apps.
+Initial implementation and baseline macOS/Windows CI builds are complete, and
+the 2026-08-07 UI/UX overhaul (config-seeded effort/speed, compact activity
+rows, one-box composer) has shipped through owner-authorized GitHub Actions
+builds — the `native-build` workflow is now the standard build path for both
+platforms. The current Mac candidate and the GHA-built Windows NSIS candidate
+are installed for owner testing (Windows via the staged S3-relay procedure in
+DEPLOY-WINDOWS.md); the installer and installed executable are intentionally
+unsigned. Browser control is intentionally unsupported on Windows, and the
+Windows app has no dependency on the Windows Codex or ChatGPT desktop apps.
 See the local debate-loop records under `documents/plan-audit-implementation/`
 (gitignored).
