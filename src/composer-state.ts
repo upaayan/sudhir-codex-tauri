@@ -16,9 +16,12 @@ export interface ComposerTextareaMetrics {
 export const COMPOSER_MAX_HEIGHT_PX = 220;
 
 export function getComposerPresentation(busy: boolean): ComposerPresentation {
-  return busy
-    ? { placeholder: "Thinking…", submitLabel: "Steer" }
-    : { placeholder: "Type your request…", submitLabel: "Send" };
+  // The placeholder stays constant: turn status is signalled by the working
+  // dot, the Stop button, and the Send/Steer label instead of placeholder flips.
+  return {
+    placeholder: "Type your request…",
+    submitLabel: busy ? "Steer" : "Send",
+  };
 }
 
 export function resizeComposerTextarea(textarea: ComposerTextareaMetrics): void {

@@ -510,11 +510,18 @@ body {
 
 .composer {
   position: relative;
-  border-top: 1px solid var(--border);
-  padding: 10px 14px;
+  margin: 10px 14px 14px;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+.composer:focus-within {
+  border-color: var(--accent);
 }
 
 .drop-hint {
@@ -536,16 +543,17 @@ body {
   resize: none;
   max-height: 220px;
   overflow-y: hidden;
-  background: var(--bg-raised);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  background: transparent;
+  border: none;
   color: var(--text);
-  padding: 10px;
+  padding: 4px 2px;
   font: inherit;
 }
 
-.composer textarea:focus,
-.model-select:focus-visible,
+.composer textarea:focus {
+  outline: none;
+}
+
 .button:focus-visible,
 .theme-toggle button:focus-visible,
 .attachment-remove:focus-visible {
@@ -562,14 +570,86 @@ body {
 .composer-actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+.composer-settings {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .composer-turn-actions {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-left: auto;
+}
+
+.pill-select {
+  appearance: none;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 12px;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.pill-select:focus-visible {
+  border-color: var(--accent);
+  outline: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  outline-offset: 1px;
+}
+
+.pill-select:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.composer-hint {
+  color: var(--text-dim);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.icon-button {
+  display: grid;
+  place-items: center;
+  padding: 6px;
+  line-height: 0;
+}
+
+.stop-button {
+  color: var(--danger);
+}
+
+.working-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  opacity: 0.5;
+}
+
+.working-dot.is-working {
+  background: var(--accent);
+  opacity: 1;
+  animation: working-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes working-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(0.7); opacity: 0.55; }
 }
 
 .button {
@@ -642,11 +722,6 @@ body {
   margin: 4px 0 0;
 }
 
-.model-next-turn-note {
-  margin-top: 10px;
-}
-
-.model-select,
 .interaction-card select,
 .interaction-card input {
   width: 100%;

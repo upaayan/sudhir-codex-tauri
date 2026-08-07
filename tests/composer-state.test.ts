@@ -10,7 +10,7 @@ test("composer presents request copy while idle and steering copy while active",
     submitLabel: "Send",
   });
   assert.deepEqual(module.getComposerPresentation(true), {
-    placeholder: "Thinking…",
+    placeholder: "Type your request…",
     submitLabel: "Steer",
   });
 });

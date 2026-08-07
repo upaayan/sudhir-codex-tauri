@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 
@@ -13,9 +13,13 @@ interface Props {
   busy: boolean;
   onSend: (text: string, attachments: Attachment[]) => Promise<void> | void;
   onInterrupt: () => void;
+  // Settings pills built by the app shell; rendered into the footer row so
+  // model/effort/speed live in the same line as the composer's own controls
+  // while their props and disabled state stay owned by app.tsx.
+  settings?: ReactNode;
 }
 
-export function ChatComposer({ disabled, busy, onSend, onInterrupt }: Props) {
+export function ChatComposer({ disabled, busy, onSend, onInterrupt, settings }: Props) {
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
@@ -148,15 +152,33 @@ export function ChatComposer({ disabled, busy, onSend, onInterrupt }: Props) {
       <div className="composer-actions">
         <button
           type="button"
-          className="button attach-button"
+          className="button icon-button attach-button"
           onClick={pickAttachments}
           disabled={disabled}
+          aria-label="Attach images or documents"
           title="Attach images or documents"
         >
           <PaperclipIcon />
-          Attach
         </button>
+        {settings}
         <div className="composer-turn-actions">
+          <span
+            className={`working-dot${busy ? " is-working" : ""}`}
+            aria-label={busy ? "Working" : "Idle"}
+            role="status"
+            title={busy ? "Working" : "Idle"}
+          />
+          {busy ? (
+            <button
+              type="button"
+              className="button icon-button stop-button"
+              onClick={onInterrupt}
+              aria-label="Stop turn"
+              title="Stop the running turn"
+            >
+              <StopIcon />
+            </button>
+          ) : null}
           <button
             type="button"
             className="button primary"
@@ -165,14 +187,18 @@ export function ChatComposer({ disabled, busy, onSend, onInterrupt }: Props) {
           >
             {presentation.submitLabel}
           </button>
-          {busy ? (
-            <button type="button" className="button" onClick={onInterrupt}>
-              Interrupt
-            </button>
-          ) : null}
         </div>
       </div>
     </div>
+  );
+}
+
+function StopIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <rect x="8.5" y="8.5" width="7" height="7" rx="1.5" fill="currentColor" />
+    </svg>
   );
 }
 

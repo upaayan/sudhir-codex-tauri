@@ -37,8 +37,8 @@ import type {
 } from "./codex-types.ts";
 import { ChatComposer } from "./components/chat-composer.tsx";
 import { ChatTranscript } from "./components/chat-transcript.tsx";
+import { ComposerSettings } from "./components/composer-settings.tsx";
 import { InteractionRequest, type PendingRequest } from "./components/interaction-request.tsx";
-import { ModelPicker } from "./components/model-picker.tsx";
 import { ProjectThreadSidebar } from "./components/project-thread-sidebar.tsx";
 import { ThemePicker } from "./components/theme-picker.tsx";
 import { UsagePanel } from "./components/usage-panel.tsx";
@@ -550,21 +550,24 @@ export function App() {
           busy={busy}
           onSend={handleSend}
           onInterrupt={handleInterrupt}
+          settings={
+            <ComposerSettings
+              models={state.models}
+              selectedModel={state.selectedModel}
+              reasoningEffort={state.selectedReasoningEffort}
+              serviceTier={state.selectedServiceTier}
+              disabled={!state.connected}
+              busy={busy}
+              onModelChange={(model) => dispatch({ type: "model/select", model })}
+              onReasoningEffortChange={(effort) =>
+                dispatch({ type: "reasoningEffort/select", effort })}
+              onServiceTierChange={(serviceTier) =>
+                dispatch({ type: "serviceTier/select", serviceTier })}
+            />
+          }
         />
       </main>
       <aside className="side-panel">
-        <ModelPicker
-          models={state.models}
-          value={state.selectedModel}
-          reasoningEffort={state.selectedReasoningEffort}
-          serviceTier={state.selectedServiceTier}
-          disabled={!state.connected}
-          onChange={(model) => dispatch({ type: "model/select", model })}
-          onReasoningEffortChange={(effort) =>
-            dispatch({ type: "reasoningEffort/select", effort })}
-          onServiceTierChange={(serviceTier) =>
-            dispatch({ type: "serviceTier/select", serviceTier })}
-        />
         <UsagePanel
           rateLimits={state.rateLimits}
           rateLimitsError={state.rateLimitsError}
