@@ -229,16 +229,21 @@ export function App() {
         void loadUsage(client);
         void client.request("config/read", { includeLayers: false })
           .then((r) => {
+            // The live app-server serializes config keys in snake_case
+            // (verified empirically against sudhir-codex on 2026-08-07);
+            // the protocol types declare camelCase. Accept both, wire first.
             const config = (r as {
               config?: {
+                model_reasoning_effort?: string | null;
                 modelReasoningEffort?: string | null;
+                service_tier?: string | null;
                 serviceTier?: string | null;
               } | null;
             } | null)?.config;
             dispatch({
               type: "configDefaults/loaded",
-              effort: config?.modelReasoningEffort ?? null,
-              serviceTier: config?.serviceTier ?? null,
+              effort: config?.model_reasoning_effort ?? config?.modelReasoningEffort ?? null,
+              serviceTier: config?.service_tier ?? config?.serviceTier ?? null,
             });
           })
           .catch(() => undefined); // graceful fallback: preset-default behavior
