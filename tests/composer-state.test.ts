@@ -23,6 +23,7 @@ test("composer textarea grows with its content and caps at the Alamelu height", 
   assert.equal(typeof resizeComposerTextarea, "function");
 
   const textarea = {
+    value: "hello there",
     scrollHeight: 140,
     offsetHeight: 66,
     clientHeight: 64,
@@ -36,4 +37,10 @@ test("composer textarea grows with its content and caps at the Alamelu height", 
   textarea.clientHeight = 140;
   resizeComposerTextarea?.(textarea);
   assert.deepEqual(textarea.style, { height: "220px", overflowY: "auto" });
+
+  // Empty composer returns to its natural rows-based height (and never
+  // measures, which avoids the unsettled-first-layout inflation).
+  textarea.value = "";
+  resizeComposerTextarea?.(textarea);
+  assert.deepEqual(textarea.style, { height: "", overflowY: "hidden" });
 });

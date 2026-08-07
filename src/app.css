@@ -669,10 +669,10 @@ body {
   font-weight: 600;
 }
 
-.attach-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.icon-button svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
 }
 
 .button.danger {

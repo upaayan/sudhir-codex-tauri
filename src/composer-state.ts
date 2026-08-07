@@ -4,6 +4,7 @@ export interface ComposerPresentation {
 }
 
 export interface ComposerTextareaMetrics {
+  value: string;
   scrollHeight: number;
   offsetHeight: number;
   clientHeight: number;
@@ -25,6 +26,14 @@ export function getComposerPresentation(busy: boolean): ComposerPresentation {
 }
 
 export function resizeComposerTextarea(textarea: ComposerTextareaMetrics): void {
+  // An empty composer keeps its natural rows-based height. This also avoids
+  // measuring during the first mount, when the surrounding flex/grid width may
+  // not have settled yet and a wrapped placeholder inflates scrollHeight.
+  if (textarea.value.length === 0) {
+    textarea.style.height = "";
+    textarea.style.overflowY = "hidden";
+    return;
+  }
   const borderHeight = Math.max(0, textarea.offsetHeight - textarea.clientHeight);
   textarea.style.height = "0px";
   const contentHeight = textarea.scrollHeight + borderHeight;
