@@ -17,10 +17,11 @@ export interface ComposerTextareaMetrics {
 export const COMPOSER_MAX_HEIGHT_PX = 220;
 
 export function getComposerPresentation(busy: boolean): ComposerPresentation {
-  // The placeholder stays constant: turn status is signalled by the working
-  // dot, the Stop button, and the Send/Steer label instead of placeholder flips.
+  // No placeholder text (owner request); submitLabel is the icon button's
+  // accessible name. Turn status is signalled by the working dot and the
+  // Stop button.
   return {
-    placeholder: "Type your request…",
+    placeholder: "",
     submitLabel: busy ? "Steer" : "Send",
   };
 }
@@ -28,7 +29,7 @@ export function getComposerPresentation(busy: boolean): ComposerPresentation {
 export function resizeComposerTextarea(textarea: ComposerTextareaMetrics): void {
   // An empty composer keeps its natural rows-based height. This also avoids
   // measuring during the first mount, when the surrounding flex/grid width may
-  // not have settled yet and a wrapped placeholder inflates scrollHeight.
+  // not have settled yet and scrollHeight reads inflated.
   if (textarea.value.length === 0) {
     textarea.style.height = "";
     textarea.style.overflowY = "hidden";

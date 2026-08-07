@@ -137,6 +137,7 @@ export function ChatComposer({ disabled, busy, onSend, onInterrupt, settings }: 
         value={text}
         disabled={disabled}
         placeholder={presentation.placeholder}
+        aria-label="Message"
         rows={3}
         onChange={(event) => setText(event.target.value)}
         onKeyDown={(event) => {
@@ -181,15 +182,32 @@ export function ChatComposer({ disabled, busy, onSend, onInterrupt, settings }: 
           ) : null}
           <button
             type="button"
-            className="button primary"
+            className="send-button"
             onClick={submit}
             disabled={disabled || (!text.trim() && attachments.length === 0)}
+            aria-label={presentation.submitLabel}
+            title={busy ? "Steer the running turn" : "Send message"}
           >
-            {presentation.submitLabel}
+            <SendIcon />
           </button>
         </div>
       </div>
     </div>
+  );
+}
+
+function SendIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+      <path
+        d="M12 19V6m0 0-6 6m6-6 6 6"
+        fill="none"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2.2"
+      />
+    </svg>
   );
 }
 
