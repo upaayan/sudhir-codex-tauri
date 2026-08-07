@@ -295,6 +295,11 @@ body {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  /* The activity list itself is a bounded, scrollable box so a long turn can
+     never push the conversation off screen. */
+  max-height: 45vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .activity-detail .card {
@@ -363,6 +368,12 @@ body {
   white-space: pre-wrap;
   font-size: 12px;
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+.card-output,
+.card-json {
+  max-height: 240px;
+  overflow-y: auto;
 }
 
 .card-error {

@@ -108,7 +108,19 @@ function TranscriptCard({ entry }: { entry: TranscriptEntry }) {
       </div>
     );
   }
+  if (entry.completed && isEmptyReasoning(entry.item)) {
+    return null;
+  }
   return <ItemCard item={entry.item} />;
+}
+
+function isEmptyReasoning(item: ThreadItem): boolean {
+  const reasoning = itemPayload(item, "reasoning");
+  if (!reasoning) {
+    return false;
+  }
+  return [...reasoning.summary, ...reasoning.content]
+    .every((part) => part.trim().length === 0);
 }
 
 function ItemCard({ item }: { item: ThreadItem }) {
