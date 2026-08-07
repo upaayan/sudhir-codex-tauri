@@ -11,7 +11,7 @@ import {
   type ThreadItem,
 } from "../codex-types.ts";
 import type { ThreadState, TranscriptEntry } from "../codex-state.ts";
-import { summarizeActivityEntry, type ActivityRow } from "../activity-summary.ts";
+import { summarizeActivityEntries, type ActivityRow } from "../activity-summary.ts";
 import { groupTranscriptEntries } from "../transcript-groups.ts";
 
 interface Props {
@@ -93,13 +93,7 @@ export function ChatTranscript({ thread }: Props) {
 }
 
 function ActivityCard({ entries }: { entries: TranscriptEntry[] }) {
-  const rows: Array<{ entry: TranscriptEntry; row: ActivityRow }> = [];
-  for (const entry of entries) {
-    const row = summarizeActivityEntry(entry);
-    if (row) {
-      rows.push({ entry, row });
-    }
-  }
+  const rows = summarizeActivityEntries(entries);
   const inProgress = entries.some(
     (entry) => entry.kind === "item" && !entry.completed,
   );

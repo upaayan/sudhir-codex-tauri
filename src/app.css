@@ -381,8 +381,16 @@ body {
 }
 
 .activity-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
   font-size: 13px;
   line-height: 1.5;
+}
+
+.activity-row-expandable {
+  display: block;
 }
 
 .activity-row-summary {

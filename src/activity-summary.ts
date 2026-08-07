@@ -2,6 +2,7 @@ import type { TranscriptEntry } from "./codex-state.ts";
 import {
   isUnknownItem,
   itemPayload,
+  mcpImageContent,
   patchChangeKindLabel,
   type ThreadItem,
 } from "./codex-types.ts";
@@ -17,6 +18,21 @@ export interface ActivityRow {
 // Commentary longer than this gets an expandable markdown detail; shorter
 // commentary is fully readable from the row itself.
 const COMMENTARY_DETAIL_THRESHOLD = 160;
+
+// The rendered row list for an activity group. The collapsed count and the
+// ticker must derive from this same list, never from the raw entries.
+export function summarizeActivityEntries(
+  entries: TranscriptEntry[],
+): Array<{ entry: TranscriptEntry; row: ActivityRow }> {
+  const rows: Array<{ entry: TranscriptEntry; row: ActivityRow }> = [];
+  for (const entry of entries) {
+    const row = summarizeActivityEntry(entry);
+    if (row) {
+      rows.push({ entry, row });
+    }
+  }
+  return rows;
+}
 
 // Returns null only for reasoning entries that completed with no content —
 // those rows are dropped entirely. Every other entry yields a row: unknown
@@ -90,9 +106,12 @@ export function summarizeActivityEntry(entry: TranscriptEntry): ActivityRow | nu
 
   const mcp = itemPayload(item, "mcpToolCall");
   if (mcp) {
+    // Expandable only when the card body would actually show something: an
+    // error message or displayable images. A bare result renders nothing
+    // beyond the label, which would leave a dead chevron.
     return {
       label: singleLine(`Tool · ${mcp.server} / ${mcp.tool} · ${mcp.status}`),
-      hasDetail: Boolean(mcp.error || mcp.result),
+      hasDetail: Boolean(mcp.error?.message) || mcpImageContent(mcp.result).length > 0,
     };
   }
 

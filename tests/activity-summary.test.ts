@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { stripCommandWrapper, summarizeActivityEntry } from "../src/activity-summary.ts";
+import {
+  stripCommandWrapper,
+  summarizeActivityEntries,
+  summarizeActivityEntry,
+} from "../src/activity-summary.ts";
 import type { ItemEntry, TranscriptEntry } from "../src/codex-state.ts";
 import type { ThreadItem } from "../src/codex-types.ts";
 
@@ -164,6 +168,18 @@ test("commentary reads as a text row and only long commentary expands", () => {
   assert.equal(long?.hasDetail, true);
 });
 
+test("the rendered row list excludes dropped entries so counts stay honest", () => {
+  const entries: TranscriptEntry[] = [
+    entry({ type: "commandExecution", id: "c1", cwd: "/", command: "ls", status: "completed", exitCode: 0 }),
+    entry({ type: "reasoning", id: "r1", summary: [""], content: [] }, true), // dropped
+    entry({ type: "webSearch", id: "w1", status: "completed", query: "q" }),
+    entry({ type: "reasoning", id: "r2", summary: ["thinking"], content: [] }),
+  ];
+  const rows = summarizeActivityEntries(entries);
+  assert.equal(rows.length, 3, "completed-and-empty reasoning must not be counted");
+  assert.deepEqual(rows.map(({ entry: e }) => e.key), ["c1", "w1", "r2"]);
+});
+
 test("web search and tool calls become compact one-liners", () => {
   const search = summarizeActivityEntry(entry({
     type: "webSearch", id: "w1", status: "completed", query: "tauri webview2 css",
@@ -171,16 +187,24 @@ test("web search and tool calls become compact one-liners", () => {
   assert.equal(search?.label, "Web search · “tauri webview2 css”");
   assert.equal(search?.hasDetail, false);
 
-  const tool = summarizeActivityEntry(entry({
+  const toolWithImage = summarizeActivityEntry(entry({
     type: "mcpToolCall", id: "m1", server: "agentify", tool: "query",
-    status: "completed", arguments: null, result: { content: [] },
+    status: "completed", arguments: null,
+    result: { content: [{ type: "image", data: "cG5n", mimeType: "image/png" }] },
   }));
-  assert.equal(tool?.label, "Tool · agentify / query · completed");
-  assert.equal(tool?.hasDetail, true);
+  assert.equal(toolWithImage?.label, "Tool · agentify / query · completed");
+  assert.equal(toolWithImage?.hasDetail, true);
 
+  const toolWithError = summarizeActivityEntry(entry({
+    type: "mcpToolCall", id: "m2", server: "agentify", tool: "query",
+    status: "failed", arguments: null, error: { message: "boom" },
+  }));
+  assert.equal(toolWithError?.hasDetail, true);
+
+  // A bare or empty result renders nothing beyond the label — no dead chevron.
   const bareTool = summarizeActivityEntry(entry({
-    type: "mcpToolCall", id: "m2", server: "agentify", tool: "status",
-    status: "inProgress", arguments: null,
+    type: "mcpToolCall", id: "m3", server: "agentify", tool: "status",
+    status: "completed", arguments: null, result: { content: [] },
   }));
   assert.equal(bareTool?.hasDetail, false);
 });
