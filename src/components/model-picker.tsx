@@ -9,7 +9,7 @@ interface Props {
   models: Model[];
   value: string | null;
   reasoningEffort: string | null;
-  serviceTier: string | null;
+  serviceTier: string | null | undefined;
   disabled: boolean;
   onChange: (model: string | null) => void;
   onReasoningEffortChange: (effort: string | null) => void;

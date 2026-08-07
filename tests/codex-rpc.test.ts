@@ -95,6 +95,36 @@ test("buildTurnSubmission starts an idle turn with its selected settings", () =>
   });
 });
 
+test("buildTurnSubmission omits unset settings instead of sending nulls", () => {
+  assert.deepEqual(buildTurnSubmission({
+    threadId: "thread-1",
+    input: [{ type: "text", text: "Start here" }],
+    model: null,
+    effort: null,
+    serviceTier: undefined,
+  }), {
+    method: "turn/start",
+    params: {
+      threadId: "thread-1",
+      input: [{ type: "text", text: "Start here" }],
+    },
+  });
+});
+
+test("buildTurnSubmission sends an explicit null serviceTier when the user chose Standard", () => {
+  const submission = buildTurnSubmission({
+    threadId: "thread-1",
+    input: [{ type: "text", text: "Start here" }],
+    model: "gpt-5.6-sol",
+    effort: "max",
+    serviceTier: null,
+  });
+  assert.equal(submission.method, "turn/start");
+  const params = submission.params as unknown as Record<string, unknown>;
+  assert.ok("serviceTier" in params, "explicit Standard must serialize the key");
+  assert.equal(params.serviceTier, null);
+});
+
 test("buildTurnSubmission steers an active turn without settings overrides", () => {
   assert.deepEqual(buildTurnSubmission({
     threadId: "thread-1",

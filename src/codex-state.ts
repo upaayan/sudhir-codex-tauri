@@ -30,7 +30,11 @@ import type {
   TurnError,
   TurnStatus,
 } from "./codex-types.ts";
-import { selectedEffortForModel, speedTiersForModel } from "./model-settings.ts";
+import {
+  reasoningEffortOptions,
+  selectedEffortForModel,
+  speedTiersForModel,
+} from "./model-settings.ts";
 
 // ---------------------------------------------------------------------------
 // Project persistence
@@ -137,7 +141,12 @@ export interface AppState {
   modelsLoading: boolean;
   selectedModel: string | null;
   selectedReasoningEffort: string | null;
-  selectedServiceTier: string | null;
+  // Tri-state: undefined = untouched (turn/start omits the key), null = user
+  // explicitly chose Standard (turn/start sends null to clear), string = tier id.
+  selectedServiceTier: string | null | undefined;
+  // Defaults read from config/read, waiting for model/list so they can be
+  // validated against the selected model. Applied by whichever arrives second.
+  pendingConfigDefaults: { effort: string | null; serviceTier: string | null } | null;
   rateLimits: AccountRateLimitsResponse | null;
   rateLimitsError: string | null;
   usage: AccountUsageResponse | null;
@@ -161,7 +170,8 @@ export function createInitialState(): AppState {
     modelsLoading: false,
     selectedModel: null,
     selectedReasoningEffort: null,
-    selectedServiceTier: null,
+    selectedServiceTier: undefined,
+    pendingConfigDefaults: null,
     rateLimits: null,
     rateLimitsError: null,
     usage: null,
@@ -297,6 +307,7 @@ export type AppAction =
   | { type: "models/replace"; models: Model[] }
   | { type: "model/select"; model: string | null }
   | { type: "reasoningEffort/select"; effort: string | null }
+  | { type: "configDefaults/loaded"; effort: string | null; serviceTier: string | null }
   | { type: "serviceTier/select"; serviceTier: string | null }
   | { type: "usage/rateLimits"; rateLimits: AccountRateLimitsResponse | null; error: string | null }
   | { type: "usage/account"; usage: AccountUsageResponse | null; error: string | null }
@@ -413,20 +424,31 @@ export function stateReducer(state: AppState, action: AppAction): AppState {
       {
         const selectedModel = state.selectedModel ?? defaultModelId(action.models);
         const selected = action.models.find((model) => model.model === selectedModel);
-        const selectedServiceTier = selectedServiceTierForModel(
+        let selectedReasoningEffort = selectedEffortForModel(
+          selected,
+          state.selectedReasoningEffort,
+        );
+        let selectedServiceTier = selectedServiceTierForModel(
           selected,
           state.selectedServiceTier,
         );
+        const pending = state.pendingConfigDefaults;
+        if (pending) {
+          selectedReasoningEffort =
+            validEffortSeed(selected, pending.effort) ?? selectedReasoningEffort;
+          const seededTier = validTierSeed(selected, pending.serviceTier);
+          if (seededTier !== null) {
+            selectedServiceTier = seededTier;
+          }
+        }
       return {
         ...state,
         models: action.models,
         modelsLoading: false,
         selectedModel,
-        selectedReasoningEffort: selectedEffortForModel(
-          selected,
-          state.selectedReasoningEffort,
-        ),
+        selectedReasoningEffort,
         selectedServiceTier,
+        pendingConfigDefaults: null,
       };
       }
     case "model/select": {
@@ -448,6 +470,29 @@ export function stateReducer(state: AppState, action: AppAction): AppState {
       return { ...state, selectedReasoningEffort: action.effort };
     case "serviceTier/select":
       return { ...state, selectedServiceTier: action.serviceTier };
+    case "configDefaults/loaded": {
+      // One-shot seed from the user's saved config. If the model list has not
+      // arrived yet, park the values; models/replace consumes them. Otherwise
+      // apply now, validated against the selected model's capabilities.
+      if (state.models.length === 0) {
+        return {
+          ...state,
+          pendingConfigDefaults: {
+            effort: action.effort,
+            serviceTier: action.serviceTier,
+          },
+        };
+      }
+      const selected = state.models.find((model) => model.model === state.selectedModel);
+      const seededEffort = validEffortSeed(selected, action.effort);
+      const seededTier = validTierSeed(selected, action.serviceTier);
+      return {
+        ...state,
+        selectedReasoningEffort: seededEffort ?? state.selectedReasoningEffort,
+        selectedServiceTier: seededTier !== null ? seededTier : state.selectedServiceTier,
+        pendingConfigDefaults: null,
+      };
+    }
     case "usage/rateLimits":
       return {
         ...state,
@@ -494,15 +539,38 @@ function defaultModelId(models: Model[]): string | null {
 
 function selectedServiceTierForModel(
   model: Model | undefined,
-  currentTier: string | null,
-): string | null {
+  currentTier: string | null | undefined,
+): string | null | undefined {
   const tiers = speedTiersForModel(model);
+  if (tiers.length === 0) {
+    // A model with no tier concept gets "no opinion" — never an explicit clear.
+    return undefined;
+  }
+  if (currentTier === null) {
+    // The user explicitly chose Standard; keep that across tiered models.
+    return null;
+  }
   if (currentTier && tiers.some((tier) => tier.id === currentTier)) {
     return currentTier;
   }
   return tiers.some((tier) => tier.id === model?.defaultServiceTier)
-    ? (model?.defaultServiceTier ?? null)
-    : null;
+    ? (model?.defaultServiceTier ?? undefined)
+    : undefined;
+}
+
+function validEffortSeed(model: Model | undefined, effort: string | null): string | null {
+  if (!effort) {
+    return null;
+  }
+  const choices = reasoningEffortOptions(model);
+  return choices.some((choice) => choice.value === effort) ? effort : null;
+}
+
+function validTierSeed(model: Model | undefined, tier: string | null): string | null {
+  if (!tier) {
+    return null;
+  }
+  return speedTiersForModel(model).some((candidate) => candidate.id === tier) ? tier : null;
 }
 
 function applyNotification(
@@ -793,7 +861,8 @@ export function formatRateLimitWindow(window: RateLimitWindow | null | undefined
   if (!window) {
     return "unavailable";
   }
-  const parts = [`${window.usedPercent}% used`];
+  const remaining = Math.min(100, Math.max(0, 100 - window.usedPercent));
+  const parts = [`${remaining}% left`];
   if (typeof window.resetsAt === "number" && window.resetsAt > 0) {
     parts.push(`resets ${new Date(window.resetsAt * 1000).toLocaleString()}`);
   }

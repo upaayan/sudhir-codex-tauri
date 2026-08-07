@@ -227,6 +227,21 @@ export function App() {
           });
         });
         void loadUsage(client);
+        void client.request("config/read", { includeLayers: false })
+          .then((r) => {
+            const config = (r as {
+              config?: {
+                modelReasoningEffort?: string | null;
+                serviceTier?: string | null;
+              } | null;
+            } | null)?.config;
+            dispatch({
+              type: "configDefaults/loaded",
+              effort: config?.modelReasoningEffort ?? null,
+              serviceTier: config?.serviceTier ?? null,
+            });
+          })
+          .catch(() => undefined); // graceful fallback: preset-default behavior
       } catch (error) {
         const diagnostic = await invoke<string>("app_server_diagnostic").catch(() => "");
         dispatch({

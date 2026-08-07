@@ -201,7 +201,7 @@ test("effort defaults per model and resets only when the next model cannot use i
   assert.equal(state.selectedReasoningEffort, "high");
 });
 
-test("speed tier selection resets for a non-GPT model even if a tier is present", () => {
+test("speed tier collapses to no-opinion for a non-GPT model even if a tier is present", () => {
   let state = createInitialState();
   state = stateReducer(state, {
     type: "models/replace",
@@ -210,8 +210,100 @@ test("speed tier selection resets for a non-GPT model even if a tier is present"
   state = stateReducer(state, { type: "serviceTier/select", serviceTier: "priority" });
   assert.equal(state.selectedServiceTier, "priority");
 
+  // speedTiersForModel returns [] for non-GPT models, so the tier concept does
+  // not exist there: the selection becomes undefined (omit), never an explicit clear.
   state = stateReducer(state, { type: "model/select", model: "pi-xai/grok-4.5" });
+  assert.equal(state.selectedServiceTier, undefined);
+});
+
+test("explicit Standard survives switches between tiered models", () => {
+  let state = createInitialState();
+  state = stateReducer(state, {
+    type: "models/replace",
+    models: [
+      model("gpt-5.6-sol", ["priority"]),
+      model("gpt-5.5", ["priority"]),
+      model("pi-xai/grok-4.5", []),
+    ],
+  });
+  state = stateReducer(state, { type: "serviceTier/select", serviceTier: null });
   assert.equal(state.selectedServiceTier, null);
+
+  state = stateReducer(state, { type: "model/select", model: "gpt-5.5" });
+  assert.equal(state.selectedServiceTier, null, "Standard persists across tiered models");
+
+  state = stateReducer(state, { type: "model/select", model: "pi-xai/grok-4.5" });
+  assert.equal(state.selectedServiceTier, undefined, "no tier concept → no opinion");
+});
+
+test("config defaults seed effort and speed when models arrive second", () => {
+  let state = createInitialState();
+  state = stateReducer(state, {
+    type: "configDefaults/loaded",
+    effort: "max",
+    serviceTier: "priority",
+  });
+  assert.deepEqual(state.pendingConfigDefaults, { effort: "max", serviceTier: "priority" });
+
+  state = stateReducer(state, {
+    type: "models/replace",
+    models: [model("gpt-5.6-sol", ["priority"], ["low", "medium", "high", "max"], "low")],
+  });
+  assert.equal(state.selectedReasoningEffort, "max");
+  assert.equal(state.selectedServiceTier, "priority");
+  assert.equal(state.pendingConfigDefaults, null);
+});
+
+test("config defaults seed effort and speed when models arrive first", () => {
+  let state = createInitialState();
+  state = stateReducer(state, {
+    type: "models/replace",
+    models: [model("gpt-5.6-sol", ["priority"], ["low", "medium", "high", "max"], "low")],
+  });
+  assert.equal(state.selectedReasoningEffort, "low");
+
+  state = stateReducer(state, {
+    type: "configDefaults/loaded",
+    effort: "max",
+    serviceTier: "priority",
+  });
+  assert.equal(state.selectedReasoningEffort, "max");
+  assert.equal(state.selectedServiceTier, "priority");
+  assert.equal(state.pendingConfigDefaults, null);
+});
+
+test("an unsupported config effort falls through to the model default", () => {
+  let state = createInitialState();
+  state = stateReducer(state, {
+    type: "configDefaults/loaded",
+    effort: "ultra",
+    serviceTier: "turbo",
+  });
+  state = stateReducer(state, {
+    type: "models/replace",
+    models: [model("gpt-5.6-sol", ["priority"], ["low", "medium", "high"], "medium")],
+  });
+  assert.equal(state.selectedReasoningEffort, "medium");
+  assert.equal(state.selectedServiceTier, undefined);
+});
+
+test("the config seed is one-shot and applies even after a user selection", () => {
+  // Documents the no-touched-flags decision: the startup seed applies on
+  // arrival unconditionally (validated), even if a selection landed first.
+  let state = createInitialState();
+  state = stateReducer(state, {
+    type: "models/replace",
+    models: [model("gpt-5.6-sol", ["priority"], ["low", "medium", "high", "max"], "low")],
+  });
+  state = stateReducer(state, { type: "reasoningEffort/select", effort: "high" });
+
+  state = stateReducer(state, {
+    type: "configDefaults/loaded",
+    effort: "max",
+    serviceTier: null,
+  });
+  assert.equal(state.selectedReasoningEffort, "max");
+  assert.equal(state.selectedServiceTier, undefined, "null config tier is not a seed");
 });
 
 test("thread hydration keeps persisted items in order", () => {
@@ -604,7 +696,7 @@ test("usage formatting helpers", () => {
   assert.equal(formatTokens(null), "—");
   assert.equal(
     formatRateLimitWindow({ usedPercent: 12, windowDurationMins: 300, resetsAt: 1754410000 }),
-    "12% used · resets " + new Date(1754410000 * 1000).toLocaleString(),
+    "88% left · resets " + new Date(1754410000 * 1000).toLocaleString(),
   );
   assert.equal(formatRateLimitWindow(null), "unavailable");
   assert.equal(threadStatusText({ active: { activeFlags: ["waitingOnUserInput"] } }), "active (waitingOnUserInput)");

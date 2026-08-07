@@ -69,6 +69,9 @@ export interface BuildTurnSubmissionOptions {
   activeTurnId?: string | null;
   model?: string | null;
   effort?: string | null;
+  // serviceTier is a double option on the wire: an omitted key means "leave the
+  // backend's configured tier unchanged" while an explicit null means "clear it"
+  // (the user picked Standard). undefined = omit, null = send null.
   serviceTier?: string | null;
 }
 
@@ -94,16 +97,17 @@ export function buildTurnSubmission({
       },
     };
   }
-  return {
-    method: "turn/start",
-    params: {
-      threadId,
-      input,
-      model,
-      effort,
-      serviceTier,
-    },
-  };
+  const params: TurnStartParams = { threadId, input };
+  if (model != null) {
+    params.model = model;
+  }
+  if (effort != null) {
+    params.effort = effort;
+  }
+  if (serviceTier !== undefined) {
+    params.serviceTier = serviceTier;
+  }
+  return { method: "turn/start", params };
 }
 
 // Thread creation and resume can wait on plugin/MCP startup, and a turn can
