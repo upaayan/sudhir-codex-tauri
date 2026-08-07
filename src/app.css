@@ -370,10 +370,57 @@ body {
   font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
-.card-output,
-.card-json {
+/* Each expanded activity row's detail is a single bounded, scrollable box.
+   (The bound lives on this wrapper — not on the inner card selectors — so a
+   detail never nests two scrollbars.) */
+.activity-row-detail {
   max-height: 240px;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  margin-top: 6px;
+}
+
+.activity-row {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.activity-row-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.activity-row-summary::marker,
+.activity-row-summary::-webkit-details-marker {
+  display: none;
+}
+
+.activity-row-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+}
+
+.activity-row-chevron {
+  color: var(--text-dim);
+  font-size: 11px;
+  opacity: 0;
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.activity-row-expandable:hover .activity-row-chevron,
+.activity-row-summary:focus-visible .activity-row-chevron,
+.activity-row-expandable[open] .activity-row-chevron {
+  opacity: 1;
+}
+
+.activity-row-expandable[open] .activity-row-chevron {
+  transform: rotate(90deg);
 }
 
 .card-error {

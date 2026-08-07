@@ -11,6 +11,7 @@ import {
   type ThreadItem,
 } from "../codex-types.ts";
 import type { ThreadState, TranscriptEntry } from "../codex-state.ts";
+import { summarizeActivityEntry, type ActivityRow } from "../activity-summary.ts";
 import { groupTranscriptEntries } from "../transcript-groups.ts";
 
 interface Props {
@@ -19,10 +20,18 @@ interface Props {
 
 export function ChatTranscript({ thread }: Props) {
   const transcriptRef = useRef<HTMLDivElement>(null);
+  // Auto-scroll only while the user is pinned near the bottom. The pin is
+  // tracked by the scroll handler (not measured inside the layout effect,
+  // which runs post-append and would always read "not near bottom").
+  const pinnedRef = useRef(true);
+
+  useLayoutEffect(() => {
+    pinnedRef.current = true;
+  }, [thread?.threadId]);
 
   useLayoutEffect(() => {
     const transcript = transcriptRef.current;
-    if (transcript) {
+    if (transcript && pinnedRef.current) {
       transcript.scrollTop = transcript.scrollHeight;
     }
   }, [thread?.threadId, thread?.entries]);
@@ -37,7 +46,9 @@ export function ChatTranscript({ thread }: Props) {
         return;
       }
       requestAnimationFrame(() => {
-        transcript.scrollTop = transcript.scrollHeight;
+        if (pinnedRef.current) {
+          transcript.scrollTop = transcript.scrollHeight;
+        }
       });
     };
     transcript.addEventListener("load", scrollAfterImageSettles, true);
@@ -47,6 +58,11 @@ export function ChatTranscript({ thread }: Props) {
       transcript.removeEventListener("error", scrollAfterImageSettles, true);
     };
   }, [thread?.threadId]);
+
+  const trackPin = (event: { currentTarget: HTMLDivElement }) => {
+    const el = event.currentTarget;
+    pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  };
 
   if (!thread) {
     return <div ref={transcriptRef} className="transcript transcript-empty">Select a thread to begin.</div>;
@@ -58,7 +74,7 @@ export function ChatTranscript({ thread }: Props) {
   const rows = groupTranscriptEntries(thread.entries);
 
   return (
-    <div ref={transcriptRef} className="transcript">
+    <div ref={transcriptRef} className="transcript" onScroll={trackPin}>
       {thread.turnError && thread.turnStatus === "failed" && (
         <div className="card card-error">
           <div className="card-label">Turn failed</div>
@@ -77,20 +93,52 @@ export function ChatTranscript({ thread }: Props) {
 }
 
 function ActivityCard({ entries }: { entries: TranscriptEntry[] }) {
+  const rows: Array<{ entry: TranscriptEntry; row: ActivityRow }> = [];
+  for (const entry of entries) {
+    const row = summarizeActivityEntry(entry);
+    if (row) {
+      rows.push({ entry, row });
+    }
+  }
   const inProgress = entries.some(
     (entry) => entry.kind === "item" && !entry.completed,
   );
-  const countLabel = `${entries.length} ${entries.length === 1 ? "update" : "updates"}`;
+  // Live ticker: while the turn runs, the collapsed line shows what is
+  // happening right now; afterwards it shows how much happened.
+  const latest = rows[rows.length - 1];
+  const countLabel = `${rows.length} ${rows.length === 1 ? "update" : "updates"}`;
+  const preview = inProgress ? (latest?.row.label ?? "Working…") : countLabel;
   return (
     <details className="card card-activity">
       <summary className="activity-summary">
         <span className="card-label">Activity</span>
-        <span className="activity-preview">{inProgress ? "Working…" : countLabel}</span>
+        <span className="activity-preview">{preview}</span>
       </summary>
       <div className="activity-detail">
-        {entries.map((entry) => (
-          <TranscriptCard key={entry.key} entry={entry} />
+        {rows.map(({ entry, row }) => (
+          <ActivityRowView key={entry.key} entry={entry} row={row} />
         ))}
+      </div>
+    </details>
+  );
+}
+
+function ActivityRowView({ entry, row }: { entry: TranscriptEntry; row: ActivityRow }) {
+  if (!row.hasDetail) {
+    return (
+      <div className="activity-row">
+        <span className="activity-row-label">{row.label}</span>
+      </div>
+    );
+  }
+  return (
+    <details className="activity-row activity-row-expandable">
+      <summary className="activity-row-summary">
+        <span className="activity-row-label">{row.label}</span>
+        <span className="activity-row-chevron" aria-hidden="true">▸</span>
+      </summary>
+      <div className="activity-row-detail">
+        <TranscriptCard entry={entry} />
       </div>
     </details>
   );
