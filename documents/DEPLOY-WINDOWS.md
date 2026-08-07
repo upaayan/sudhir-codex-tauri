@@ -536,19 +536,41 @@ the rollback chain.
 
 **Relay bucket (`s3://sudhir-windows-relay`):** delete the transient objects of
 the completed deployment; retain `scripts/` (poller + sync) and `artifacts/`
-(current installer, raw exe, and the rollback chain):
+(current installer, raw exe, and the rollback chain).
+
+Do **not** use `aws s3 rm --recursive` — bulk recursive deletes trip the
+repo-memory safety hook on the controlling Mac (verified 2026-08-07) and are
+also harder to audit. Enumerate the exact keys first, review the keep-list,
+then delete the enumerated objects explicitly:
 
 ```bash
-aws s3 rm s3://sudhir-windows-relay/ --recursive --region ap-south-1 \
-  --exclude "*" \
-  --include "relay_cmd_*.sh" \
-  --include "relay_response_*.txt" \
-  --include "claims/*" \
-  --include "payloads/stage*.ps1"
+aws s3api list-objects-v2 --bucket sudhir-windows-relay --region ap-south-1 \
+  --query 'Contents[].Key' --output json > /tmp/relay_all_keys.json
+
+python3 - << 'PY'
+import json
+keys = json.load(open("/tmp/relay_all_keys.json"))
+transient = [k for k in keys if k.startswith(
+    ("relay_cmd_", "relay_response_", "claims/", "payloads/"))]
+keep = [k for k in keys if k not in transient]
+print(f"total={len(keys)} delete={len(transient)} keep={len(keep)}")
+print("--- keeping ---")
+for k in sorted(keep):
+    print(" ", k)
+json.dump({"Objects": [{"Key": k} for k in transient], "Quiet": True},
+          open("/tmp/relay_delete_payload.json", "w"))
+PY
+
+# Review the printed keep-list (must be exactly scripts/ + the artifacts/
+# rollback chain) BEFORE running the delete:
+aws s3api delete-objects --bucket sudhir-windows-relay --region ap-south-1 \
+  --delete file:///tmp/relay_delete_payload.json
+rm -f /tmp/relay_all_keys.json /tmp/relay_delete_payload.json
 ```
 
-Keep the two most recent installers under `artifacts/` (current + rollback);
-older ones may be pruned once a newer baseline has been verified.
+`delete-objects` accepts at most 1000 keys per call; repeat the enumeration if
+more remain. Keep the two most recent installers under `artifacts/` (current +
+rollback); older ones may be pruned once a newer baseline has been verified.
 
 **Windows/WSL:** remove the temp payloads the stages downloaded; keep the
 Downloads installer (it is the current release) and every
