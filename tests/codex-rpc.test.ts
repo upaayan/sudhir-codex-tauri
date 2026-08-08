@@ -111,6 +111,26 @@ test("buildTurnSubmission omits unset settings instead of sending nulls", () => 
   });
 });
 
+test("buildTurnSubmission includes a chosen permissions profile and omits it when unset", () => {
+  const chosen = buildTurnSubmission({
+    threadId: "thread-1",
+    input: [{ type: "text", text: "Start here" }],
+    permissions: ":read-only",
+  });
+  assert.equal(chosen.method, "turn/start");
+  assert.equal((chosen.params as { permissions?: string }).permissions, ":read-only");
+
+  const unset = buildTurnSubmission({
+    threadId: "thread-1",
+    input: [{ type: "text", text: "Start here" }],
+    permissions: null,
+  });
+  assert.ok(
+    !("permissions" in (unset.params as unknown as Record<string, unknown>)),
+    "unset permissions must omit the key",
+  );
+});
+
 test("buildTurnSubmission sends an explicit null serviceTier when the user chose Standard", () => {
   const submission = buildTurnSubmission({
     threadId: "thread-1",
