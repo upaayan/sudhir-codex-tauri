@@ -37,7 +37,11 @@ import type {
 } from "./codex-types.ts";
 import { ChatComposer } from "./components/chat-composer.tsx";
 import { ChatTranscript } from "./components/chat-transcript.tsx";
-import { ComposerSettings } from "./components/composer-settings.tsx";
+import {
+  ComposerSettings,
+  type PermissionProfileOption,
+} from "./components/composer-settings.tsx";
+import { summarizeActivityEntries } from "./activity-summary.ts";
 import { InteractionRequest, type PendingRequest } from "./components/interaction-request.tsx";
 import { ProjectThreadSidebar } from "./components/project-thread-sidebar.tsx";
 import { ThemePicker } from "./components/theme-picker.tsx";
@@ -57,6 +61,12 @@ export function App() {
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
   const [projectThreads, setProjectThreads] = useState<Record<string, Thread[]>>({});
   const [recentThreads, setRecentThreads] = useState<Thread[]>([]);
+  const [permissionProfiles, setPermissionProfiles] = useState<PermissionProfileOption[]>([]);
+  const [selectedPermissions, setSelectedPermissions] = useState<string | null>(null);
+  // Threads whose turn finished while the user was looking elsewhere.
+  const [unseenThreads, setUnseenThreads] = useState<ReadonlySet<string>>(() => new Set());
+  const selectedThreadIdRef = useRef<string | null>(null);
+  selectedThreadIdRef.current = state.selectedThreadId;
   const [themePreference, setThemePreference] = useState<ThemePreference>(() =>
     parseThemePreference(localStorage.getItem(THEME_STORAGE_KEY)));
   const rpcRef = useRef<RpcClient | null>(null);
@@ -167,6 +177,17 @@ export function App() {
         if (action) {
           dispatch(action);
         }
+        if (method === "turn/completed" || method === "turn/failed") {
+          const notification = (params ?? {}) as { threadId?: string };
+          const threadId = notification.threadId;
+          if (threadId && threadId !== selectedThreadIdRef.current) {
+            setUnseenThreads((current) => {
+              const next = new Set(current);
+              next.add(threadId);
+              return next;
+            });
+          }
+        }
         if (method === "thread/name/updated") {
           const notification = (params ?? {}) as Record<string, unknown>;
           const threadId = typeof notification.threadId === "string" ? notification.threadId : null;
@@ -227,6 +248,14 @@ export function App() {
           });
         });
         void loadUsage(client);
+        void client.request("permissionProfile/list", {})
+          .then((r) => {
+            const data = (r as { data?: PermissionProfileOption[] } | null)?.data;
+            if (Array.isArray(data)) {
+              setPermissionProfiles(data);
+            }
+          })
+          .catch(() => undefined); // pill simply stays hidden
         void client.request("config/read", { includeLayers: false })
           .then((r) => {
             // The live app-server serializes config keys in snake_case
@@ -380,6 +409,14 @@ export function App() {
     async (threadId: string, backendPath: string) => {
       dispatch({ type: "project/select", backendPath });
       dispatch({ type: "thread/select", threadId });
+      setUnseenThreads((current) => {
+        if (!current.has(threadId)) {
+          return current;
+        }
+        const next = new Set(current);
+        next.delete(threadId);
+        return next;
+      });
       const client = rpcRef.current;
       if (!client) {
         return;
@@ -421,6 +458,7 @@ export function App() {
         model: state.selectedModel,
         effort: state.selectedReasoningEffort,
         serviceTier: state.selectedServiceTier,
+        permissions: selectedPermissions,
       });
 
       if (submission.method === "turn/start" && shouldAutoNameThread(threadState)) {
@@ -486,6 +524,7 @@ export function App() {
       state.selectedServiceTier,
       state.selectedProjectBackendPath,
       state.threadsBy,
+      selectedPermissions,
       dispatch,
     ],
   );
@@ -518,6 +557,16 @@ export function App() {
   );
 
   const busy = selectedThread?.turnStatus === "inProgress";
+  // The composer's live status line: the latest activity row label of the
+  // running turn (same source as the collapsed Activity ticker).
+  let workingStatus: string | null = null;
+  if (busy && selectedThread) {
+    const currentTurnEntries = selectedThread.entries.filter(
+      (entry) => entry.turnId === selectedThread.turnId,
+    );
+    const rows = summarizeActivityEntries(currentTurnEntries);
+    workingStatus = rows[rows.length - 1]?.row.label ?? "Working…";
+  }
 
   return (
     <div className="app-shell">
@@ -525,6 +574,7 @@ export function App() {
         state={state}
         projectThreads={projectThreads}
         recentThreads={recentThreads}
+        unseenThreads={unseenThreads}
         onAddProject={handleAddProject}
         onSelectProject={handleSelectProject}
         onNewThread={handleNewThread}
@@ -553,6 +603,7 @@ export function App() {
           key={state.selectedThreadId ?? "no-thread"}
           disabled={!state.connected || !state.selectedThreadId}
           busy={busy}
+          statusText={workingStatus}
           onSend={handleSend}
           onInterrupt={handleInterrupt}
           settings={
@@ -561,6 +612,8 @@ export function App() {
               selectedModel={state.selectedModel}
               reasoningEffort={state.selectedReasoningEffort}
               serviceTier={state.selectedServiceTier}
+              permissionProfiles={permissionProfiles}
+              selectedPermissions={selectedPermissions}
               disabled={!state.connected}
               busy={busy}
               onModelChange={(model) => dispatch({ type: "model/select", model })}
@@ -568,6 +621,7 @@ export function App() {
                 dispatch({ type: "reasoningEffort/select", effort })}
               onServiceTierChange={(serviceTier) =>
                 dispatch({ type: "serviceTier/select", serviceTier })}
+              onPermissionsChange={setSelectedPermissions}
             />
           }
         />

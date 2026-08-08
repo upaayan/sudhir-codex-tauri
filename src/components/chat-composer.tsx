@@ -11,6 +11,8 @@ import {
 interface Props {
   disabled: boolean;
   busy: boolean;
+  // Live one-line description of what the running turn is doing right now.
+  statusText?: string | null;
   onSend: (text: string, attachments: Attachment[]) => Promise<void> | void;
   onInterrupt: () => void;
   // Settings pills built by the app shell; rendered into the footer row so
@@ -19,7 +21,7 @@ interface Props {
   settings?: ReactNode;
 }
 
-export function ChatComposer({ disabled, busy, onSend, onInterrupt, settings }: Props) {
+export function ChatComposer({ disabled, busy, statusText, onSend, onInterrupt, settings }: Props) {
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
@@ -150,6 +152,9 @@ export function ChatComposer({ disabled, busy, onSend, onInterrupt, settings }: 
       {attachmentError ? (
         <div className="composer-error" role="alert">{attachmentError}</div>
       ) : null}
+      {busy && statusText ? (
+        <div className="composer-status" role="status">{statusText}</div>
+      ) : null}
       <div className="composer-actions">
         <button
           type="button"
@@ -163,36 +168,69 @@ export function ChatComposer({ disabled, busy, onSend, onInterrupt, settings }: 
         </button>
         {settings}
         <div className="composer-turn-actions">
-          <span
-            className={`working-dot${busy ? " is-working" : ""}`}
-            aria-label={busy ? "Working" : "Idle"}
-            role="status"
-            title={busy ? "Working" : "Idle"}
+          <ActionButton
+            busy={busy}
+            hasDraft={Boolean(text.trim()) || attachments.length > 0}
+            disabled={disabled}
+            submitLabel={presentation.submitLabel}
+            onSubmit={submit}
+            onInterrupt={onInterrupt}
           />
-          {busy ? (
-            <button
-              type="button"
-              className="button icon-button stop-button"
-              onClick={onInterrupt}
-              aria-label="Stop turn"
-              title="Stop the running turn"
-            >
-              <StopIcon />
-            </button>
-          ) : null}
-          <button
-            type="button"
-            className="send-button"
-            onClick={submit}
-            disabled={disabled || (!text.trim() && attachments.length === 0)}
-            aria-label={presentation.submitLabel}
-            title={busy ? "Steer the running turn" : "Send message"}
-          >
-            <SendIcon />
-          </button>
         </div>
       </div>
     </div>
+  );
+}
+
+// One button, three faces: Send (idle, needs a draft), Working/Stop (busy,
+// empty draft — pulses; click interrupts), Steer (busy with a draft).
+function ActionButton({
+  busy,
+  hasDraft,
+  disabled,
+  submitLabel,
+  onSubmit,
+  onInterrupt,
+}: {
+  busy: boolean;
+  hasDraft: boolean;
+  disabled: boolean;
+  submitLabel: string;
+  onSubmit: () => void;
+  onInterrupt: () => void;
+}) {
+  if (busy && !hasDraft) {
+    return (
+      <button
+        type="button"
+        className="send-button is-working"
+        onClick={onInterrupt}
+        aria-label="Working — click to stop"
+        title="Working — click to stop the turn"
+      >
+        <StopGlyph />
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className="send-button"
+      onClick={onSubmit}
+      disabled={disabled || !hasDraft}
+      aria-label={submitLabel}
+      title={busy ? "Steer the running turn" : "Send message"}
+    >
+      <SendIcon />
+    </button>
+  );
+}
+
+function StopGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+      <rect x="7.5" y="7.5" width="9" height="9" rx="2" fill="currentColor" />
+    </svg>
   );
 }
 
@@ -211,14 +249,6 @@ function SendIcon() {
   );
 }
 
-function StopIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true">
-      <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="1.8" />
-      <rect x="8.5" y="8.5" width="7" height="7" rx="1.5" fill="currentColor" />
-    </svg>
-  );
-}
 
 function PaperclipIcon() {
   return (

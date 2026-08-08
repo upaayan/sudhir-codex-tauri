@@ -6,11 +6,11 @@ test("composer presents request copy while idle and steering copy while active",
   assert.ok(module, "composer-state module should exist");
 
   assert.deepEqual(module.getComposerPresentation(false), {
-    placeholder: "",
+    placeholder: "Ask anything",
     submitLabel: "Send",
   });
   assert.deepEqual(module.getComposerPresentation(true), {
-    placeholder: "",
+    placeholder: "Ask anything",
     submitLabel: "Steer",
   });
 });

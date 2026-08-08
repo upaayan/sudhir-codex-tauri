@@ -3,6 +3,7 @@ import { isUnknownItem, itemPayload } from "./codex-types.ts";
 
 export type TranscriptRow =
   | { kind: "entry"; key: string; entry: TranscriptEntry }
+  | { kind: "messages"; key: string; entries: TranscriptEntry[] }
   | { kind: "activity"; key: string; entries: TranscriptEntry[] };
 
 export function groupTranscriptEntries(entries: TranscriptEntry[]): TranscriptRow[] {
@@ -27,10 +28,35 @@ export function groupTranscriptEntries(entries: TranscriptEntry[]): TranscriptRo
       continue;
     }
 
+    // Consecutive final agent messages collapse into one box with one block
+    // per message (activity rows in between do not break the run, matching
+    // "one box for Activity, one for the rest").
+    if (isFinalAgentMessage(entry)) {
+      const last = rows[rows.length - 1];
+      const lastNonActivity = [...rows].reverse().find((row) => row.kind !== "activity");
+      if (
+        lastNonActivity?.kind === "messages" &&
+        (last === lastNonActivity || last?.kind === "activity")
+      ) {
+        lastNonActivity.entries.push(entry);
+        continue;
+      }
+      rows.push({ kind: "messages", key: `messages:${entry.key}`, entries: [entry] });
+      continue;
+    }
+
     rows.push({ kind: "entry", key: entry.key, entry });
   }
 
   return rows;
+}
+
+function isFinalAgentMessage(entry: TranscriptEntry): boolean {
+  if (entry.kind === "unsupportedRequest" || isUnknownItem(entry.item)) {
+    return false;
+  }
+  const agentMessage = itemPayload(entry.item, "agentMessage");
+  return Boolean(agentMessage) && agentMessage?.phase !== "commentary";
 }
 
 function isActivityEntry(entry: TranscriptEntry): boolean {

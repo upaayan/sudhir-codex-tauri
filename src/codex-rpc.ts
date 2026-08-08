@@ -73,6 +73,9 @@ export interface BuildTurnSubmissionOptions {
   // backend's configured tier unchanged" while an explicit null means "clear it"
   // (the user picked Standard). undefined = omit, null = send null.
   serviceTier?: string | null;
+  // Named permission-profile id (e.g. ":read-only"); omitted when unset so the
+  // backend default applies.
+  permissions?: string | null;
 }
 
 export type TurnSubmission =
@@ -86,6 +89,7 @@ export function buildTurnSubmission({
   model,
   effort,
   serviceTier,
+  permissions,
 }: BuildTurnSubmissionOptions): TurnSubmission {
   if (activeTurnId) {
     return {
@@ -106,6 +110,9 @@ export function buildTurnSubmission({
   }
   if (serviceTier !== undefined) {
     params.serviceTier = serviceTier;
+  }
+  if (permissions != null) {
+    params.permissions = permissions;
   }
   return { method: "turn/start", params };
 }

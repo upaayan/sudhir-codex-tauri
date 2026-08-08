@@ -50,8 +50,9 @@ test("groups reasoning, commentary, and tool output from one turn behind one act
   ];
 
   const rows = groupTranscriptEntries(entries);
-  assert.deepEqual(rows.map((row) => row.kind), ["activity", "entry", "activity"]);
+  assert.deepEqual(rows.map((row) => row.kind), ["activity", "messages", "activity"]);
   assert.equal(rows[0]?.kind === "activity" ? rows[0].entries.length : 0, 4);
+  assert.equal(rows[1]?.kind === "messages" ? rows[1].entries.length : 0, 1);
   assert.equal(rows[2]?.kind === "activity" ? rows[2].entries.length : 0, 1);
 });
 
@@ -106,5 +107,8 @@ test("keeps user messages, final answers, generated images, and legacy agent mes
     },
   ]);
 
-  assert.deepEqual(rows.map((row) => row.kind), ["entry", "entry", "entry", "entry"]);
+  // Consecutive final/legacy agent messages coalesce into one messages box
+  // (one block per message); user messages and images stay separate rows.
+  assert.deepEqual(rows.map((row) => row.kind), ["entry", "messages", "entry"]);
+  assert.equal(rows[1]?.kind === "messages" ? rows[1].entries.length : 0, 2);
 });

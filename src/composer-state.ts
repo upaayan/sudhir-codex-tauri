@@ -17,11 +17,9 @@ export interface ComposerTextareaMetrics {
 export const COMPOSER_MAX_HEIGHT_PX = 220;
 
 export function getComposerPresentation(busy: boolean): ComposerPresentation {
-  // No placeholder text (owner request); submitLabel is the icon button's
-  // accessible name. Turn status is signalled by the working dot and the
-  // Stop button.
+  // submitLabel is the accessible name of the single action button.
   return {
-    placeholder: "",
+    placeholder: "Ask anything",
     submitLabel: busy ? "Steer" : "Send",
   };
 }

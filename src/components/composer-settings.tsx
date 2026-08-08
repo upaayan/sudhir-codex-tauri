@@ -5,16 +5,25 @@ import {
   speedTiersForModel,
 } from "../model-settings.ts";
 
+export interface PermissionProfileOption {
+  id: string;
+  description?: string | null;
+  allowed?: boolean;
+}
+
 interface Props {
   models: Model[];
   selectedModel: string | null;
   reasoningEffort: string | null;
   serviceTier: string | null | undefined;
+  permissionProfiles: PermissionProfileOption[];
+  selectedPermissions: string | null;
   disabled: boolean;
   busy: boolean;
   onModelChange: (model: string | null) => void;
   onReasoningEffortChange: (effort: string | null) => void;
   onServiceTierChange: (serviceTier: string | null) => void;
+  onPermissionsChange: (permissions: string | null) => void;
 }
 
 // Compact pill selects for the composer footer. Stays enabled while a turn is
@@ -24,11 +33,14 @@ export function ComposerSettings({
   selectedModel,
   reasoningEffort,
   serviceTier,
+  permissionProfiles,
+  selectedPermissions,
   disabled,
   busy,
   onModelChange,
   onReasoningEffortChange,
   onServiceTierChange,
+  onPermissionsChange,
 }: Props) {
   const selected = models.find((model) => model.model === selectedModel);
   const efforts = reasoningEffortOptions(selected);
@@ -82,7 +94,39 @@ export function ComposerSettings({
           ))}
         </select>
       ) : null}
+      {permissionProfiles.length > 0 ? (
+        <select
+          className="pill-select"
+          value={selectedPermissions ?? ""}
+          disabled={disabled}
+          aria-label="Access level"
+          title="Access level for the next turn"
+          onChange={(event) => onPermissionsChange(event.target.value || null)}
+        >
+          <option value="">Access: default</option>
+          {permissionProfiles.filter((profile) => profile.allowed !== false).map((profile) => (
+            <option key={profile.id} value={profile.id}>
+              {permissionProfileLabel(profile.id)}
+            </option>
+          ))}
+        </select>
+      ) : null}
       {busy ? <span className="composer-hint">applies to the next turn</span> : null}
     </div>
   );
+}
+
+export function permissionProfileLabel(id: string): string {
+  switch (id) {
+    case ":read-only":
+      return "Read only";
+    case ":workspace":
+      return "Workspace";
+    case ":danger-full-access":
+      return "Full access";
+    default:
+      return id.replace(/^:/, "").split(/[-_]/)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
+  }
 }

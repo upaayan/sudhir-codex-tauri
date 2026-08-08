@@ -170,6 +170,7 @@ export interface TurnStartParams {
   model?: string | null;
   effort?: string | null;
   serviceTier?: string | null;
+  permissions?: string | null;
 }
 
 export interface TurnStartResponse {

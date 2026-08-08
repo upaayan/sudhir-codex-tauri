@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 
 import { userMessagePresentation } from "../attachments.ts";
@@ -84,11 +84,77 @@ export function ChatTranscript({ thread }: Props) {
       {rows.map((row) =>
         row.kind === "activity" ? (
           <ActivityCard key={row.key} entries={row.entries} />
+        ) : row.kind === "messages" ? (
+          <MessagesCard key={row.key} entries={row.entries} />
         ) : (
           <TranscriptCard key={row.key} entry={row.entry} />
         ),
       )}
     </div>
+  );
+}
+
+// One box for a run of consecutive final agent messages, one block per
+// message, with a single copy control for the whole box.
+function MessagesCard({ entries }: { entries: TranscriptEntry[] }) {
+  const texts: string[] = [];
+  for (const entry of entries) {
+    if (entry.kind === "unsupportedRequest") {
+      continue;
+    }
+    const agentMessage = itemPayload(entry.item, "agentMessage");
+    if (agentMessage?.text) {
+      texts.push(agentMessage.text);
+    }
+  }
+  return (
+    <div className="card card-agent">
+      <CopyButton text={texts.join("\n\n")} />
+      <div className="card-label">Sudhir-Codex</div>
+      {texts.map((text, index) => (
+        <div className="message-block" key={entries[index]?.key ?? index}>
+          <MarkdownBody text={text} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const scratch = document.createElement("textarea");
+      scratch.value = text;
+      document.body.appendChild(scratch);
+      scratch.select();
+      document.execCommand("copy");
+      scratch.remove();
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1200);
+  };
+  return (
+    <button
+      type="button"
+      className="copy-button"
+      onClick={copy}
+      aria-label="Copy message"
+      title="Copy message"
+    >
+      {copied ? "✓" : <CopyIcon />}
+    </button>
+  );
+}
+
+function CopyIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true">
+      <rect x="9" y="9" width="11" height="11" rx="2" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" fill="none" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
   );
 }
 
@@ -180,6 +246,7 @@ function ItemCard({ item }: { item: ThreadItem }) {
     const presentation = userMessagePresentation(userMessage.content);
     return (
       <div className="card card-user">
+        {presentation.text ? <CopyButton text={presentation.text} /> : null}
         <div className="card-label">You</div>
         {presentation.text ? <MarkdownBody text={presentation.text} /> : null}
         {presentation.attachments.length > 0 ? (
@@ -206,6 +273,7 @@ function ItemCard({ item }: { item: ThreadItem }) {
   if (agentMessage) {
     return (
       <div className="card card-agent">
+        <CopyButton text={agentMessage.text} />
         <div className="card-label">Sudhir-Codex</div>
         <MarkdownBody text={agentMessage.text} />
       </div>
