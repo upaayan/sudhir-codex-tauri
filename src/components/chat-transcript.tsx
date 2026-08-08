@@ -64,6 +64,22 @@ export function ChatTranscript({ thread }: Props) {
     pinnedRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
   };
 
+  // When the composer grows upward it shrinks the transcript; keep a pinned
+  // user pinned so the newest box never hides behind the composer.
+  useLayoutEffect(() => {
+    const transcript = transcriptRef.current;
+    if (!transcript || typeof ResizeObserver === "undefined") {
+      return;
+    }
+    const observer = new ResizeObserver(() => {
+      if (pinnedRef.current) {
+        transcript.scrollTop = transcript.scrollHeight;
+      }
+    });
+    observer.observe(transcript);
+    return () => observer.disconnect();
+  }, [thread?.threadId]);
+
   if (!thread) {
     return <div ref={transcriptRef} className="transcript transcript-empty">Select a thread to begin.</div>;
   }

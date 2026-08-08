@@ -557,6 +557,18 @@ export function App() {
   );
 
   const busy = selectedThread?.turnStatus === "inProgress";
+  const selectedThreadSummary = state.selectedThreadId
+    ? (recentThreads.find((thread) => thread.id === state.selectedThreadId) ??
+       Object.values(projectThreads).flat().find((thread) => thread.id === state.selectedThreadId))
+    : undefined;
+  const selectedThreadTitle =
+    selectedThreadSummary?.name ??
+    selectedThread?.thread?.name ??
+    selectedThreadSummary?.preview ??
+    null;
+  const selectedProjectName = state.selectedProjectBackendPath
+    ? state.selectedProjectBackendPath.split(/[\\/]/).filter(Boolean).pop() ?? null
+    : null;
   // The composer's live status line: the latest activity row label of the
   // running turn (same source as the collapsed Activity ticker).
   let workingStatus: string | null = null;
@@ -581,6 +593,14 @@ export function App() {
         onSelectThread={handleSelectThread}
       />
       <main className="main-area">
+        {selectedThread ? (
+          <header className="main-header">
+            <span className="main-header-title">{selectedThreadTitle ?? "Untitled thread"}</span>
+            {selectedProjectName ? (
+              <span className="main-header-project">{selectedProjectName}</span>
+            ) : null}
+          </header>
+        ) : null}
         {state.diagnostic && (
           <div className="diagnostic-banner" role="alert">
             <pre>{state.diagnostic}</pre>

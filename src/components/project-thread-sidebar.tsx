@@ -65,6 +65,7 @@ export function ProjectThreadSidebar({
   return (
     <nav className="sidebar">
       <div className="sidebar-toolbar">
+        <span className="sidebar-brand">Sudhir Codex</span>
         <button
           type="button"
           className="icon-button"
