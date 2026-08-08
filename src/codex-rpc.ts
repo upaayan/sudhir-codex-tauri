@@ -201,6 +201,10 @@ export class RpcClient {
         },
         capabilities: {
           mcpServerOpenaiFormElicitation: true,
+          // Required for turn/start.permissions (the Access pill): the server
+          // rejects the field with -32600 unless this capability is declared.
+          // Verified empirically against the live app-server on 2026-08-08.
+          experimentalApi: true,
         },
       },
     );

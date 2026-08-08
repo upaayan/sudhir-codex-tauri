@@ -322,7 +322,7 @@ test("initialize sends the fixed client identity then initialized", async () => 
     method: string;
     params: {
       clientInfo: { name: string; title: string; version: string };
-      capabilities: { mcpServerOpenaiFormElicitation: boolean };
+      capabilities: { mcpServerOpenaiFormElicitation: boolean; experimentalApi: boolean };
     };
   };
   assert.equal(sent.method, "initialize");
@@ -333,6 +333,7 @@ test("initialize sends the fixed client identity then initialized", async () => 
   });
   assert.deepEqual(sent.params.capabilities, {
     mcpServerOpenaiFormElicitation: true,
+    experimentalApi: true,
   });
   transport.deliver(
     JSON.stringify({
