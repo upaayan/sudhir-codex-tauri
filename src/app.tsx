@@ -592,6 +592,9 @@ export function App() {
           </div>
         )}
         <ChatTranscript thread={selectedThread} />
+        {busy && workingStatus ? (
+          <div className="turn-status" role="status">{workingStatus}</div>
+        ) : null}
         {pendingRequests.map((request) => (
           <InteractionRequest
             key={String(request.requestId)}
@@ -603,7 +606,6 @@ export function App() {
           key={state.selectedThreadId ?? "no-thread"}
           disabled={!state.connected || !state.selectedThreadId}
           busy={busy}
-          statusText={workingStatus}
           onSend={handleSend}
           onInterrupt={handleInterrupt}
           settings={

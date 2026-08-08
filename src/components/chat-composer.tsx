@@ -11,8 +11,6 @@ import {
 interface Props {
   disabled: boolean;
   busy: boolean;
-  // Live one-line description of what the running turn is doing right now.
-  statusText?: string | null;
   onSend: (text: string, attachments: Attachment[]) => Promise<void> | void;
   onInterrupt: () => void;
   // Settings pills built by the app shell; rendered into the footer row so
@@ -21,7 +19,7 @@ interface Props {
   settings?: ReactNode;
 }
 
-export function ChatComposer({ disabled, busy, statusText, onSend, onInterrupt, settings }: Props) {
+export function ChatComposer({ disabled, busy, onSend, onInterrupt, settings }: Props) {
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
@@ -151,9 +149,6 @@ export function ChatComposer({ disabled, busy, statusText, onSend, onInterrupt, 
       />
       {attachmentError ? (
         <div className="composer-error" role="alert">{attachmentError}</div>
-      ) : null}
-      {busy && statusText ? (
-        <div className="composer-status" role="status">{statusText}</div>
       ) : null}
       <div className="composer-actions">
         <button

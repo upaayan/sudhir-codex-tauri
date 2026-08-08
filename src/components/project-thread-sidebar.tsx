@@ -33,7 +33,7 @@ export function ProjectThreadSidebar({
     () => new Set(),
   );
   const [timelineView, setTimelineView] = useState(false);
-  const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
 
   const orderedProjects = useMemo(
     () => orderProjects(state.projects, projectThreads, state.selectedProjectBackendPath),
@@ -62,24 +62,18 @@ export function ProjectThreadSidebar({
     });
   };
 
-  const trimmedQuery = query.trim().toLowerCase();
-  const searchResults = trimmedQuery
-    ? allThreads.filter((thread) =>
-        threadTitle(thread).toLowerCase().includes(trimmedQuery) ||
-        thread.cwd.toLowerCase().includes(trimmedQuery))
-    : null;
-
   return (
     <nav className="sidebar">
       <div className="sidebar-toolbar">
-        <input
-          type="search"
-          className="sidebar-search"
-          placeholder="Search threads…"
-          aria-label="Search threads"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
+        <button
+          type="button"
+          className="icon-button"
+          onClick={() => setSearchOpen(true)}
+          aria-label="Search chats"
+          title="Search chats"
+        >
+          <SearchIcon />
+        </button>
         <button
           type="button"
           className={`icon-button bell-button${timelineView ? " active" : ""}`}
@@ -92,19 +86,19 @@ export function ProjectThreadSidebar({
         </button>
       </div>
 
-      {searchResults ? (
-        <section className="sidebar-section">
-          <div className="sidebar-heading"><span>Search</span></div>
-          <ThreadList
-            threads={searchResults.slice(0, 30)}
-            selectedThreadId={state.selectedThreadId}
-            unseenThreads={unseenThreads}
-            onSelectThread={onSelectThread}
-            emptyText="No matching threads."
-            showLocation
-          />
-        </section>
-      ) : timelineView ? (
+      {searchOpen ? (
+        <SearchPopup
+          threads={allThreads}
+          unseenThreads={unseenThreads}
+          onSelectThread={(threadId, backendPath) => {
+            setSearchOpen(false);
+            onSelectThread(threadId, backendPath);
+          }}
+          onClose={() => setSearchOpen(false)}
+        />
+      ) : null}
+
+      {timelineView ? (
         <TimelineSections
           threads={allThreads}
           state={state}
@@ -329,6 +323,86 @@ function ThreadList({
       ))}
       {threads.length === 0 && emptyText && <li className="sidebar-empty">{emptyText}</li>}
     </ul>
+  );
+}
+
+// Codex-style command-palette search: an overlay with an autofocused input
+// and thread results; Escape or a backdrop click closes it.
+function SearchPopup({
+  threads,
+  unseenThreads,
+  onSelectThread,
+  onClose,
+}: {
+  threads: Thread[];
+  unseenThreads: ReadonlySet<string>;
+  onSelectThread: (threadId: string, backendPath: string) => void;
+  onClose: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const trimmed = query.trim().toLowerCase();
+  const results = (trimmed
+    ? threads.filter((thread) =>
+        threadTitle(thread).toLowerCase().includes(trimmed) ||
+        thread.cwd.toLowerCase().includes(trimmed))
+    : [...threads].sort((a, b) => threadRecency(b) - threadRecency(a))
+  ).slice(0, 9);
+
+  return (
+    <div
+      className="search-overlay"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) {
+          onClose();
+        }
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          onClose();
+        }
+      }}
+    >
+      <div className="search-panel" role="dialog" aria-label="Search chats">
+        <input
+          type="search"
+          className="search-panel-input"
+          placeholder="Search chats"
+          aria-label="Search chats"
+          value={query}
+          autoFocus
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        <div className="search-panel-heading">Chats</div>
+        <ul className="sidebar-list search-panel-results">
+          {results.map((thread) => (
+            <li key={thread.id}>
+              <button
+                type="button"
+                className="sidebar-item"
+                onClick={() => onSelectThread(thread.id, thread.cwd)}
+                title={thread.preview}
+              >
+                <span className="sidebar-item-row">
+                  <span className="sidebar-item-title">{threadTitle(thread)}</span>
+                  {unseenThreads.has(thread.id) ? <span className="unseen-dot" /> : null}
+                  <span className="search-result-location">{locationLabel(thread.cwd)}</span>
+                </span>
+              </button>
+            </li>
+          ))}
+          {results.length === 0 && <li className="sidebar-empty">No matching chats.</li>}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+      <circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" strokeWidth="1.8" />
+      <path d="m15.5 15.5 5 5" stroke="currentColor" strokeLinecap="round" strokeWidth="1.8" />
+    </svg>
   );
 }
 

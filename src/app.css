@@ -66,25 +66,65 @@ body {
 .sidebar-toolbar {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 6px;
   margin-bottom: 14px;
 }
 
-.sidebar-search {
-  flex: 1;
-  min-width: 0;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--text);
-  font: inherit;
-  font-size: 13px;
-  padding: 6px 9px;
+.search-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
 }
 
-.sidebar-search:focus-visible {
-  border-color: var(--accent);
+.search-panel {
+  width: min(560px, 90vw);
+  max-height: 60vh;
+  overflow-y: auto;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 10px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.35);
+}
+
+.search-panel-input {
+  width: 100%;
+  background: transparent;
+  border: none;
   outline: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  padding: 8px 6px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.search-panel-heading {
+  color: var(--text-dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 10px 6px 4px;
+}
+
+.search-panel-results .sidebar-item {
+  white-space: normal;
+}
+
+.search-result-location {
+  color: var(--text-dim);
+  font-size: 11px;
+  flex: 0 0 auto;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .bell-button {
@@ -785,12 +825,16 @@ body {
   50% { opacity: 0.55; }
 }
 
-.composer-status {
+/* Live status of the running turn: its own breathing room between the
+   transcript and the composer box. */
+.turn-status {
   color: var(--text-dim);
   font-size: 12px;
+  padding: 8px 16px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex: 0 0 auto;
 }
 
 .button {
