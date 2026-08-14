@@ -470,7 +470,46 @@ To roll back:
 WSL state and `sudhir-codex` are unaffected. Do not stop, reinstall, or delete
 the persistent gateway as part of desktop rollback.
 
-## Current verified baseline (2026-08-08)
+## Current verified baseline (2026-08-14)
+
+These values identify the installation from which the next Windows update must
+start:
+
+```text
+reviewed commit:        3148fbb (Alamelu-Pi UI/UX port: unboxed transcript, topbar icons w/ tooltips, Cmd/Ctrl+D changes panel, Cmd/Ctrl+J WSL PTY terminal; main)
+installer S3:           s3://sudhir-windows-relay/artifacts/Sudhir-Codex-Tauri-gha-windows-x64-uiuxport-3148fbb.exe
+installer SHA-256:      604dcabe8db03f74008e1d3f47d16ba757e10b9e7986a2fe572efec1d025da59
+raw build EXE S3:       s3://sudhir-windows-relay/artifacts/raw/sudhir-codex-tauri-uiuxport-3148fbb.exe
+raw build EXE SHA-256:  ec8cfc128c01ed8537b961e13790ebb3b79fbc772ef48d949e4b7ab41b6b7bd5
+installed EXE SHA-256:  d870ed5106f79ec8a6bb742af4504eaef6547d60505249356b0981081f1a8ab2
+rollback installer:     C:\Users\Asus\SudhirCodexTauriBackups\Sudhir-Codex-Tauri-gha-windows-x64-round3-fcc78cf.exe
+rollback SHA-256:       85f136de37e2af12650a23adb2623781760318b8e18f3b89f8f23c431fe35c32 (prior installer; prior installed exe b575848f…)
+pre-update backup:      C:\Users\Asus\SudhirCodexTauriBackups\pre-update-20260814-235325\
+display/product version: 0.1.0
+Authenticode:           NotSigned (expected and owner-approved)
+GHA run:                31826909479 (native-build, platform=all, macOS + Windows green)
+```
+
+All ten relay stages passed 2026-08-14 (IST 2026-08-14 23:50 onward): relay
+probe; artifact preflight (installer + raw + rollback hashes verified on the
+box); inspect/backup (prior baseline `b575848f…` confirmed and copied to the
+pre-update directory, copy hash verified); stop (no instance running); bounded
+NSIS install (exit 0); registry/shortcut/version/signature verification
+(exactly one uninstall entry, DisplayVersion 0.1.0, NotSigned); NSIS
+marker-derived hash proof (raw marker `_UNK`, installed marker `_NSS`, derived
+expected hash equals actual installed hash `d870ed51…` exactly); first launch
+(hidden WSL child with the exact app-server command); graceful shutdown (WSL
+child gone); relaunch (app left open, pid 9772 / WSL 11188); WSL runtime
+health (CLI resolves, gateway running pid 287, exactly one
+`app-server --stdio`).
+
+Owner interactive checklist (screen-access items): first-run smoke items 1–15
+above — the new terminal/diff items 11–15 (Ctrl+J terminal at the project cwd,
+`clear`/`vim` TERM proof, Ctrl+D/Ctrl+U reaching the shell, no stray newline
+on Ctrl+J, Ctrl+D changes panel outside the terminal) are this round's
+feature checks.
+
+## Previous verified baseline (2026-08-08)
 
 These values identify the installation from which the next Windows update must
 start:
