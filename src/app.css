@@ -48,6 +48,9 @@ body {
   background: var(--bg);
   color: var(--text);
   font-size: 14px;
+  /* Desktop shell: the page itself never scrolls (hidden tooltips near the
+     window edge would otherwise widen the scrollable area). */
+  overflow: hidden;
 }
 
 .app-shell {

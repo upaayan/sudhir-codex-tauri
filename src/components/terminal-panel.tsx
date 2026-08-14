@@ -73,23 +73,28 @@ export function TerminalPanel({ visible, projectPath, height, onHeightChange }: 
     let unlistenExit: UnlistenFn | undefined;
     let disposed = false;
     listenReadyRef.current = (async () => {
-      const output = await listen<TerminalOutputPayload>("terminal://output", (event) => {
-        if (event.payload.id === termIdRef.current && termRef.current) {
-          termRef.current.write(base64ToBytes(event.payload.data));
+      try {
+        const output = await listen<TerminalOutputPayload>("terminal://output", (event) => {
+          if (event.payload.id === termIdRef.current && termRef.current) {
+            termRef.current.write(base64ToBytes(event.payload.data));
+          }
+        });
+        const exit = await listen<{ id: number }>("terminal://exit", (event) => {
+          registry.markExited(event.payload.id);
+          if (event.payload.id === termIdRef.current) {
+            setExited(true);
+          }
+        });
+        if (disposed) {
+          output();
+          exit();
+        } else {
+          unlistenOutput = output;
+          unlistenExit = exit;
         }
-      });
-      const exit = await listen<{ id: number }>("terminal://exit", (event) => {
-        registry.markExited(event.payload.id);
-        if (event.payload.id === termIdRef.current) {
-          setExited(true);
-        }
-      });
-      if (disposed) {
-        output();
-        exit();
-      } else {
-        unlistenOutput = output;
-        unlistenExit = exit;
+      } catch {
+        // Outside Tauri (plain-browser dev) listen rejects; the subsequent
+        // terminal_open failure is what the user should see.
       }
     })();
     return () => {
