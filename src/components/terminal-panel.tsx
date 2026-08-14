@@ -210,9 +210,10 @@ export function TerminalPanel({ visible, projectPath, height, onHeightChange }: 
           }
         });
       } catch (openError) {
-        pendingRef.current.outputs.length = 0;
-        pendingRef.current.exits.clear();
         if (!disposed) {
+          // A disposed attach must not wipe the queue a newer attach is using.
+          pendingRef.current.outputs.length = 0;
+          pendingRef.current.exits.clear();
           setError(String(openError));
         }
       }

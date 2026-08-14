@@ -21,7 +21,10 @@ use crate::platform;
 pub struct PtySession {
     cwd: String,
     master: Box<dyn MasterPty + Send>,
-    writer: Box<dyn Write + Send>,
+    /// Behind its own lock so a blocking PTY write (full tty input queue)
+    /// never happens while the map mutex is held — the window-close handler
+    /// takes the map mutex on the main thread.
+    writer: Arc<Mutex<Box<dyn Write + Send>>>,
     child: Box<dyn Child + Send + Sync>,
 }
 
@@ -101,7 +104,7 @@ pub async fn terminal_open(
         PtySession {
             cwd,
             master: pty.master,
-            writer,
+            writer: Arc::new(Mutex::new(writer)),
             child,
         },
     );
@@ -149,12 +152,15 @@ pub async fn terminal_write(
     id: u32,
     data: String,
 ) -> Result<(), String> {
-    let mut map = state.0.lock().map_err(|_| "terminal state poisoned")?;
-    let session = map
-        .get_mut(&id)
-        .ok_or_else(|| format!("no terminal session {id}"))?;
-    session
-        .writer
+    let writer = {
+        let map = state.0.lock().map_err(|_| "terminal state poisoned")?;
+        let session = map
+            .get(&id)
+            .ok_or_else(|| format!("no terminal session {id}"))?;
+        Arc::clone(&session.writer)
+    };
+    let mut writer = writer.lock().map_err(|_| "terminal writer poisoned")?;
+    writer
         .write_all(data.as_bytes())
         .map_err(|error| format!("terminal write failed: {error}"))
 }
