@@ -46,11 +46,17 @@ import { InteractionRequest, type PendingRequest } from "./components/interactio
 import { DiffPanel } from "./components/diff-panel.tsx";
 import { ProjectThreadSidebar } from "./components/project-thread-sidebar.tsx";
 import {
+  clampTerminalHeight,
+  DEFAULT_TERMINAL_HEIGHT,
+  TerminalPanel,
+} from "./components/terminal-panel.tsx";
+import {
   DiffIcon,
   FolderIcon,
   PanelRightIcon,
   shortcutLabel,
   SidebarToggleIcon,
+  TerminalIcon,
   TopbarToggle,
 } from "./components/topbar.tsx";
 import { ThemePicker } from "./components/theme-picker.tsx";
@@ -68,6 +74,8 @@ const EXIT_EVENT = "app-server://exit";
 const SIDEBAR_HIDDEN_KEY = "sudhir-codex.layout.sidebarHidden";
 const SIDE_PANEL_HIDDEN_KEY = "sudhir-codex.layout.sidePanelHidden";
 const DIFF_OPEN_KEY = "sudhir-codex.layout.diffOpen";
+const TERMINAL_OPEN_KEY = "sudhir-codex.layout.terminalOpen";
+const TERMINAL_HEIGHT_KEY = "sudhir-codex.layout.terminalHeight";
 
 export function App() {
   const [state, dispatch] = useReducer(stateReducer, undefined, createInitialState);
@@ -91,6 +99,15 @@ export function App() {
   const [diffOpen, setDiffOpen] = useState(
     () => localStorage.getItem(DIFF_OPEN_KEY) === "1",
   );
+  const [terminalOpen, setTerminalOpen] = useState(
+    () => localStorage.getItem(TERMINAL_OPEN_KEY) === "1",
+  );
+  const [terminalHeight, setTerminalHeight] = useState(() => {
+    const stored = Number(localStorage.getItem(TERMINAL_HEIGHT_KEY));
+    return Number.isFinite(stored) && stored > 0
+      ? clampTerminalHeight(stored)
+      : DEFAULT_TERMINAL_HEIGHT;
+  });
   const rpcRef = useRef<RpcClient | null>(null);
   const pendingResolvers = useRef(
     new Map<string | number, (outcome: ServerRequestHandlerResult) => void>(),
@@ -343,6 +360,14 @@ export function App() {
   }, [diffOpen]);
 
   useEffect(() => {
+    localStorage.setItem(TERMINAL_OPEN_KEY, terminalOpen ? "1" : "0");
+  }, [terminalOpen]);
+
+  useEffect(() => {
+    localStorage.setItem(TERMINAL_HEIGHT_KEY, String(terminalHeight));
+  }, [terminalHeight]);
+
+  useEffect(() => {
     localStorage.setItem(
       storageKey(),
       serializeProjects({
@@ -453,7 +478,8 @@ export function App() {
           void handleAddProject();
           break;
         case "terminal":
-          // Wired when the terminal panel lands (build-order step 5).
+          event.preventDefault();
+          setTerminalOpen((open) => !open);
           break;
       }
     };
@@ -699,6 +725,15 @@ export function App() {
               <SidebarToggleIcon />
             </TopbarToggle>
             <TopbarToggle
+              label="Toggle terminal"
+              shortcut={shortcutLabel("J")}
+              active={terminalOpen}
+              disabled={!state.selectedProjectBackendPath}
+              onClick={() => setTerminalOpen((open) => !open)}
+            >
+              <TerminalIcon />
+            </TopbarToggle>
+            <TopbarToggle
               label="Toggle changes"
               shortcut={shortcutLabel("D")}
               active={diffOpen}
@@ -735,6 +770,12 @@ export function App() {
           </div>
         )}
         <ChatTranscript thread={selectedThread} />
+        <TerminalPanel
+          visible={terminalOpen && Boolean(state.selectedProjectBackendPath)}
+          projectPath={state.selectedProjectBackendPath}
+          height={terminalHeight}
+          onHeightChange={setTerminalHeight}
+        />
         {busy && workingStatus ? (
           <div className="turn-status" role="status">{workingStatus}</div>
         ) : null}
