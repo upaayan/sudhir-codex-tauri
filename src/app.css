@@ -11,6 +11,8 @@
   --danger: #ff6b6b;
   --diagnostic-bg: #3a1f2b;
   --drop-surface: rgba(11, 18, 32, 0.92);
+  --diff-add: rgba(63, 185, 80, 0.16);
+  --diff-del: rgba(248, 81, 73, 0.16);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
@@ -27,6 +29,8 @@
   --danger: #b4232f;
   --diagnostic-bg: #fff0f2;
   --drop-surface: rgba(248, 250, 252, 0.94);
+  --diff-add: rgba(31, 136, 61, 0.12);
+  --diff-del: rgba(207, 34, 46, 0.12);
 }
 
 * {
@@ -352,12 +356,127 @@ body {
   padding-top: 16px;
 }
 
+/* Two-row grid: header spans all columns; the permanent .main-column keeps
+   today's flex stack; the diff panel, when open, is a real second column. */
 .main-area {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+  min-width: 0;
+  height: 100%;
+}
+
+.main-area-with-diff {
+  grid-template-columns: minmax(0, 1fr) clamp(300px, 34%, 400px);
+}
+
+.main-column {
   display: flex;
   flex-direction: column;
   min-height: 0;
   min-width: 0;
-  height: 100%;
+  grid-row: 2;
+  grid-column: 1;
+}
+
+.diff-panel {
+  grid-row: 2;
+  grid-column: 2;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--border);
+  background: var(--bg-raised);
+}
+
+.diff-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.diff-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.diff-panel-empty {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.diff-group-summary {
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.diff-group-title {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+
+.diff-group-status {
+  color: var(--text-dim);
+  flex: 0 0 auto;
+}
+
+.diff-file {
+  margin-top: 8px;
+}
+
+.diff-file-path {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  margin-bottom: 4px;
+  overflow-wrap: anywhere;
+}
+
+.diff-file-kind {
+  color: var(--text-dim);
+}
+
+.diff-text {
+  margin: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  overflow-x: auto;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.diff-line {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.diff-line-add {
+  background: var(--diff-add);
+}
+
+.diff-line-del {
+  background: var(--diff-del);
+}
+
+.diff-line-hunk,
+.diff-line-meta {
+  color: var(--text-dim);
 }
 
 .diagnostic-banner {
@@ -386,7 +505,7 @@ body {
 }
 
 .main-header {
-  flex: 0 0 auto;
+  grid-column: 1 / -1;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -394,6 +513,17 @@ body {
   border-bottom: 1px solid var(--border);
   background: var(--bg);
   min-width: 0;
+}
+
+.topbar-icon:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.topbar-icon:disabled:hover {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-dim);
 }
 
 .main-header-actions {

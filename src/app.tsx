@@ -43,14 +43,18 @@ import {
 } from "./components/composer-settings.tsx";
 import { summarizeActivityEntries } from "./activity-summary.ts";
 import { InteractionRequest, type PendingRequest } from "./components/interaction-request.tsx";
+import { DiffPanel } from "./components/diff-panel.tsx";
 import { ProjectThreadSidebar } from "./components/project-thread-sidebar.tsx";
 import {
+  DiffIcon,
+  FolderIcon,
   PanelRightIcon,
   shortcutLabel,
   SidebarToggleIcon,
   TopbarToggle,
 } from "./components/topbar.tsx";
 import { ThemePicker } from "./components/theme-picker.tsx";
+import { commandForShortcut } from "./shortcuts.ts";
 import { UsagePanel } from "./components/usage-panel.tsx";
 import {
   parseThemePreference,
@@ -63,6 +67,7 @@ const MESSAGE_EVENT = "app-server://message";
 const EXIT_EVENT = "app-server://exit";
 const SIDEBAR_HIDDEN_KEY = "sudhir-codex.layout.sidebarHidden";
 const SIDE_PANEL_HIDDEN_KEY = "sudhir-codex.layout.sidePanelHidden";
+const DIFF_OPEN_KEY = "sudhir-codex.layout.diffOpen";
 
 export function App() {
   const [state, dispatch] = useReducer(stateReducer, undefined, createInitialState);
@@ -82,6 +87,9 @@ export function App() {
   );
   const [sidePanelHidden, setSidePanelHidden] = useState(
     () => localStorage.getItem(SIDE_PANEL_HIDDEN_KEY) === "1",
+  );
+  const [diffOpen, setDiffOpen] = useState(
+    () => localStorage.getItem(DIFF_OPEN_KEY) === "1",
   );
   const rpcRef = useRef<RpcClient | null>(null);
   const pendingResolvers = useRef(
@@ -330,24 +338,9 @@ export function App() {
     localStorage.setItem(SIDE_PANEL_HIDDEN_KEY, sidePanelHidden ? "1" : "0");
   }, [sidePanelHidden]);
 
-  // ⌘B / Ctrl+B toggles the sidebar, ⌘U / Ctrl+U the usage panel.
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!(event.metaKey || event.ctrlKey) || event.shiftKey || event.altKey) {
-        return;
-      }
-      const key = event.key.toLowerCase();
-      if (key === "b") {
-        event.preventDefault();
-        setSidebarHidden((hidden) => !hidden);
-      } else if (key === "u") {
-        event.preventDefault();
-        setSidePanelHidden((hidden) => !hidden);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+    localStorage.setItem(DIFF_OPEN_KEY, diffOpen ? "1" : "0");
+  }, [diffOpen]);
 
   useEffect(() => {
     localStorage.setItem(
@@ -420,6 +413,53 @@ export function App() {
     },
     [dispatch],
   );
+
+  // Table-driven shortcuts (bubble phase): ⌘/Ctrl + J terminal, D diff,
+  // O open folder, B sidebar, U usage panel. While focus is inside the
+  // terminal, only terminal and openFolder are handled — Ctrl+D/U/B must
+  // reach the shell (Alamelu's rule).
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const command = commandForShortcut({
+        modifier: event.metaKey || event.ctrlKey,
+        shift: event.shiftKey,
+        alt: event.altKey,
+        key: event.key,
+        code: event.code,
+      });
+      if (!command) {
+        return;
+      }
+      const insideTerminal =
+        event.target instanceof Element && event.target.closest(".terminal-panel") !== null;
+      if (insideTerminal && command !== "terminal" && command !== "openFolder") {
+        return;
+      }
+      switch (command) {
+        case "sidebar":
+          event.preventDefault();
+          setSidebarHidden((hidden) => !hidden);
+          break;
+        case "usage":
+          event.preventDefault();
+          setSidePanelHidden((hidden) => !hidden);
+          break;
+        case "diff":
+          event.preventDefault();
+          setDiffOpen((open) => !open);
+          break;
+        case "openFolder":
+          event.preventDefault();
+          void handleAddProject();
+          break;
+        case "terminal":
+          // Wired when the terminal panel lands (build-order step 5).
+          break;
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [handleAddProject]);
 
   const handleNewThread = useCallback(async (backendPath: string) => {
     const client = rpcRef.current;
@@ -621,11 +661,14 @@ export function App() {
     workingStatus = rows[rows.length - 1]?.row.label ?? "Working…";
   }
 
+  // While the diff column is open the usage rail hides by derivation only —
+  // the stored ⌘U preference is never touched.
   const shellClassName = [
     "app-shell",
     sidebarHidden ? "app-shell-no-sidebar" : "",
-    sidePanelHidden ? "app-shell-no-panel" : "",
+    sidePanelHidden || diffOpen ? "app-shell-no-panel" : "",
   ].filter(Boolean).join(" ");
+  const mainAreaClassName = diffOpen ? "main-area main-area-with-diff" : "main-area";
 
   return (
     <div className={shellClassName}>
@@ -639,7 +682,7 @@ export function App() {
         onNewThread={handleNewThread}
         onSelectThread={handleSelectThread}
       />
-      <main className="main-area">
+      <main className={mainAreaClassName}>
         <header className="main-header">
           <span className="main-header-title">
             {selectedThread ? (selectedThreadTitle ?? "Untitled thread") : "Sudhir Codex"}
@@ -656,15 +699,31 @@ export function App() {
               <SidebarToggleIcon />
             </TopbarToggle>
             <TopbarToggle
+              label="Toggle changes"
+              shortcut={shortcutLabel("D")}
+              active={diffOpen}
+              onClick={() => setDiffOpen((open) => !open)}
+            >
+              <DiffIcon />
+            </TopbarToggle>
+            <TopbarToggle
+              label="Open folder"
+              shortcut={shortcutLabel("O")}
+              onClick={() => void handleAddProject()}
+            >
+              <FolderIcon />
+            </TopbarToggle>
+            <TopbarToggle
               label="Toggle usage panel"
               shortcut={shortcutLabel("U")}
-              active={!sidePanelHidden}
+              active={!sidePanelHidden && !diffOpen}
               onClick={() => setSidePanelHidden((hidden) => !hidden)}
             >
               <PanelRightIcon />
             </TopbarToggle>
           </div>
         </header>
+        <div className="main-column">
         {state.diagnostic && (
           <div className="diagnostic-banner" role="alert">
             <pre>{state.diagnostic}</pre>
@@ -711,6 +770,10 @@ export function App() {
             />
           }
         />
+        </div>
+        {diffOpen ? (
+          <DiffPanel thread={selectedThread} onClose={() => setDiffOpen(false)} />
+        ) : null}
       </main>
       <aside className="side-panel">
         <UsagePanel
