@@ -46,10 +46,11 @@ export function TerminalPanel({ visible, projectPath, height, onHeightChange }: 
   const termIdRef = useRef<number | null>(null);
   const listenReadyRef = useRef<Promise<void> | null>(null);
   // Between terminal_open being issued and its id arriving, the Rust reader
-  // thread may already emit; queue those events and flush once the id is
-  // claimed, so the first chunk (or an immediate exit) is never dropped.
-  const awaitingIdRef = useRef(false);
-  const pendingRef = useRef<{ outputs: string[]; exits: Set<number> }>({
+  // thread may already emit; queue those events (id-tagged — other projects'
+  // live sessions emit on the same shared channel) and flush only the matching
+  // ones once the id is claimed, so the first chunk or an immediate exit is
+  // never dropped and never bleeds across sessions.
+  const pendingRef = useRef<{ outputs: { id: number; data: string }[]; exits: Set<number> }>({
     outputs: [],
     exits: new Set(),
   });
@@ -85,9 +86,9 @@ export function TerminalPanel({ visible, projectPath, height, onHeightChange }: 
         const output = await listen<TerminalOutputPayload>("terminal://output", (event) => {
           if (event.payload.id === termIdRef.current && termRef.current) {
             termRef.current.write(base64ToBytes(event.payload.data));
-          } else if (awaitingIdRef.current) {
+          } else if (termIdRef.current === null) {
             const queue = pendingRef.current.outputs;
-            queue.push(event.payload.data);
+            queue.push({ id: event.payload.id, data: event.payload.data });
             if (queue.length > 256) {
               queue.shift();
             }
@@ -97,7 +98,7 @@ export function TerminalPanel({ visible, projectPath, height, onHeightChange }: 
           registry.markExited(event.payload.id);
           if (event.payload.id === termIdRef.current) {
             setExited(true);
-          } else if (awaitingIdRef.current) {
+          } else if (termIdRef.current === null) {
             pendingRef.current.exits.add(event.payload.id);
           }
         });
@@ -173,19 +174,23 @@ export function TerminalPanel({ visible, projectPath, height, onHeightChange }: 
 
     void (async () => {
       await listenReadyRef.current;
+      // Queueing is active whenever termIdRef.current is null; start this
+      // attach with an empty slate so a previous attach's leftovers cannot
+      // reach this session's screen.
+      pendingRef.current.outputs.length = 0;
+      pendingRef.current.exits.clear();
       try {
-        awaitingIdRef.current = true;
         const id = await registry.open(projectPath);
         if (disposed) {
-          awaitingIdRef.current = false;
           return;
         }
         termIdRef.current = id;
-        // Flush anything the reader emitted before the id arrived.
-        awaitingIdRef.current = false;
+        // Flush only this session's chunks emitted before the id arrived.
         const pending = pendingRef.current;
         for (const chunk of pending.outputs) {
-          term.write(base64ToBytes(chunk));
+          if (chunk.id === id) {
+            term.write(base64ToBytes(chunk.data));
+          }
         }
         pending.outputs.length = 0;
         if (pending.exits.has(id)) {
@@ -205,7 +210,6 @@ export function TerminalPanel({ visible, projectPath, height, onHeightChange }: 
           }
         });
       } catch (openError) {
-        awaitingIdRef.current = false;
         pendingRef.current.outputs.length = 0;
         pendingRef.current.exits.clear();
         if (!disposed) {
@@ -267,13 +271,17 @@ export function TerminalPanel({ visible, projectPath, height, onHeightChange }: 
     if (projectPath) {
       registry.drop(projectPath);
     }
-    if (id !== null) {
-      void invoke("terminal_close", { id }).catch(() => undefined);
-    }
     termIdRef.current = null;
     setError(null);
     setExited(false);
-    setAttachNonce((nonce) => nonce + 1);
+    void (async () => {
+      // Await the close so the reattach's cwd scan cannot find (and return)
+      // the session that is being killed.
+      if (id !== null) {
+        await invoke("terminal_close", { id }).catch(() => undefined);
+      }
+      setAttachNonce((nonce) => nonce + 1);
+    })();
   }, [projectPath]);
 
   const startDrag = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {

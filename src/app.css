@@ -485,8 +485,9 @@ body {
 /* Terminal panel: deliberately dark in both themes (Alamelu behavior; surface
    colors are mirrored in the xterm theme object in terminal-panel.tsx). A flex
    item between transcript and composer; flex-shrink 1 with the min-height
-   floor means a short window (or a diagnostic banner / approval card) squeezes
-   the terminal down to 220px before the composer loses a pixel. */
+   floor means the terminal — by far the largest shrink contribution — absorbs
+   a shortage (banner, approval card, short window) first, down to its 220px
+   floor, keeping the composer usable. */
 .terminal-panel {
   position: relative;
   flex: 0 1 auto;

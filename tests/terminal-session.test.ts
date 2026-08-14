@@ -70,3 +70,26 @@ test("drop forgets the session", async () => {
   registry.drop("/proj");
   assert.equal(await registry.open("/proj"), 2);
 });
+
+test("a slow failing open cannot evict the session Restart put in its place", async () => {
+  let calls = 0;
+  let failFirst: (error: Error) => void = () => {};
+  const registry = new TerminalSessionRegistry(() => {
+    calls += 1;
+    if (calls === 1) {
+      return new Promise<number>((_, reject) => {
+        failFirst = reject;
+      });
+    }
+    return Promise.resolve(41 + calls);
+  });
+
+  const first = registry.open("/proj");
+  registry.drop("/proj"); // Restart
+  const secondId = await registry.open("/proj");
+  failFirst(new Error("slow failure lands late"));
+  await assert.rejects(() => first, /slow failure lands late/);
+  // The late rejection must not have evicted the newer session.
+  assert.equal(await registry.open("/proj"), secondId);
+  assert.equal(calls, 2);
+});

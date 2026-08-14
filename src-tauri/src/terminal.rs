@@ -125,12 +125,17 @@ pub async fn terminal_open(
                 }
             }
         }
-        // EOF: drop the session from the map (presence == live) and reap the
-        // child so no zombie or master fd outlives the shell.
-        if let Ok(mut map) = reader_sessions.lock() {
-            if let Some(mut session) = map.remove(&id) {
-                let _ = session.child.wait();
-            }
+        // EOF (or read/emit error): drop the session from the map (presence ==
+        // live), then reap OUTSIDE the guard — on the error paths the child can
+        // still be alive, and a wait under the lock would wedge every terminal
+        // command and the window-close shutdown.
+        let removed = match reader_sessions.lock() {
+            Ok(mut map) => map.remove(&id),
+            Err(_) => None,
+        };
+        if let Some(mut session) = removed {
+            let _ = session.child.kill();
+            let _ = session.child.wait();
         }
         let _ = app.emit("terminal://exit", TerminalExit { id });
     });
@@ -178,8 +183,11 @@ pub async fn terminal_resize(
 
 #[tauri::command]
 pub async fn terminal_close(state: State<'_, TerminalMap>, id: u32) -> Result<(), String> {
-    let mut map = state.0.lock().map_err(|_| "terminal state poisoned")?;
-    if let Some(mut session) = map.remove(&id) {
+    let removed = {
+        let mut map = state.0.lock().map_err(|_| "terminal state poisoned")?;
+        map.remove(&id)
+    };
+    if let Some(mut session) = removed {
         let _ = session.child.kill();
         let _ = session.child.wait();
     }
@@ -187,12 +195,16 @@ pub async fn terminal_close(state: State<'_, TerminalMap>, id: u32) -> Result<()
 }
 
 /// Kill every session; called alongside app-server shutdown on window close.
+/// Sessions are drained under the lock but killed and reaped outside it, so a
+/// stuck child cannot wedge the main thread's close handler behind the mutex.
 pub fn shutdown_all(map: &TerminalMap) {
-    if let Ok(mut sessions) = map.0.lock() {
-        for (_, mut session) in sessions.drain() {
-            let _ = session.child.kill();
-            let _ = session.child.wait();
-        }
+    let drained: Vec<PtySession> = match map.0.lock() {
+        Ok(mut sessions) => sessions.drain().map(|(_, session)| session).collect(),
+        Err(_) => Vec::new(),
+    };
+    for mut session in drained {
+        let _ = session.child.kill();
+        let _ = session.child.wait();
     }
 }
 

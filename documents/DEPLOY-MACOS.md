@@ -150,6 +150,8 @@ flow first. Do not remove quarantine from any broader path.
 19. Drag the terminal panel to its maximum height while a diagnostic banner or
    an approval card is visible. The composer must remain fully visible (the
    terminal shrinks first; it may not go below 220 px).
+20. Type `exit` in the terminal. The panel must show *Shell exited.* with a
+   working **Restart** button that opens a fresh prompt.
 
 Generated images and MCP screenshot image blocks are delivered by app-server
 JSON-RPC and rendered as data URLs; display does not require filesystem
