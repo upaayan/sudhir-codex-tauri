@@ -202,22 +202,28 @@ pub async fn convert_host_path_to_backend(path: &str) -> Result<String, String> 
     Ok(path.to_string())
 }
 
+/// Tests that mutate or depend on shared process env (HOME, SHELL,
+/// SUDHIR_CODEX_TAURI_APP_SERVER) must hold this lock; cargo runs tests in
+/// parallel threads, so unserialized set_var/getenv pairs race.
+#[cfg(test)]
+pub(crate) static TEST_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// The two macOS launcher tests mutate shared process env vars; cargo runs
-    /// tests in parallel threads, so they must serialize or they race.
-    #[cfg(target_os = "macos")]
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
     #[cfg(target_os = "macos")]
     #[test]
     fn macos_launcher_defaults_to_home_local_bin() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        let original_home = std::env::var("HOME").ok();
         std::env::set_var("HOME", "/Users/owner");
         std::env::remove_var("SUDHIR_CODEX_TAURI_APP_SERVER");
         let spec = app_server_launch();
+        match original_home {
+            Some(home) => std::env::set_var("HOME", home),
+            None => std::env::remove_var("HOME"),
+        }
         assert_eq!(spec.program, "/Users/owner/.local/bin/sudhir-codex");
         assert_eq!(spec.args, ["app-server", "--stdio"]);
         assert!(!spec.create_no_window);
@@ -227,11 +233,11 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn macos_launcher_honors_test_override() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
         std::env::set_var("SUDHIR_CODEX_TAURI_APP_SERVER", "/tmp/fake-sudhir-codex");
         let spec = app_server_launch();
-        assert_eq!(spec.program, "/tmp/fake-sudhir-codex");
         std::env::remove_var("SUDHIR_CODEX_TAURI_APP_SERVER");
+        assert_eq!(spec.program, "/tmp/fake-sudhir-codex");
     }
 
     #[cfg(target_os = "windows")]

@@ -39,7 +39,11 @@ export class TerminalSessionRegistry {
       },
       (error: unknown) => {
         // A failed open must not wedge the slot: drop it so a retry re-opens.
-        this.sessions.delete(cwd);
+        // Guarded so a slow failure cannot evict a newer session that Restart
+        // already put in its place.
+        if (this.sessions.get(cwd) === session) {
+          this.sessions.delete(cwd);
+        }
         throw error;
       },
     );

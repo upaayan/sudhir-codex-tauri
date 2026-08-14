@@ -20,7 +20,6 @@ use crate::platform;
 
 pub struct PtySession {
     cwd: String,
-    alive: bool,
     master: Box<dyn MasterPty + Send>,
     writer: Box<dyn Write + Send>,
     child: Box<dyn Child + Send + Sync>,
@@ -43,7 +42,7 @@ struct TerminalExit {
 }
 
 #[tauri::command]
-pub fn terminal_open(
+pub async fn terminal_open(
     app: AppHandle,
     state: State<'_, TerminalMap>,
     cwd: String,
@@ -51,14 +50,12 @@ pub fn terminal_open(
     rows: u16,
 ) -> Result<u32, String> {
     let sessions = Arc::clone(&state.0);
-    {
-        let map = sessions.lock().map_err(|_| "terminal state poisoned")?;
-        if let Some((id, _)) = map
-            .iter()
-            .find(|(_, session)| session.alive && session.cwd == cwd)
-        {
-            return Ok(*id);
-        }
+    // One guard across scan and insert: two concurrent opens for the same cwd
+    // cannot both miss the scan. Sessions leave the map on exit, so presence
+    // in the map means live.
+    let mut map = sessions.lock().map_err(|_| "terminal state poisoned")?;
+    if let Some((id, _)) = map.iter().find(|(_, session)| session.cwd == cwd) {
+        return Ok(*id);
     }
 
     let spec = platform::terminal_launch(&cwd);
@@ -99,19 +96,16 @@ pub fn terminal_open(
         .map_err(|error| format!("failed to open pty reader: {error}"))?;
 
     let id = NEXT_TERMINAL_ID.fetch_add(1, Ordering::Relaxed);
-    {
-        let mut map = sessions.lock().map_err(|_| "terminal state poisoned")?;
-        map.insert(
-            id,
-            PtySession {
-                cwd,
-                alive: true,
-                master: pty.master,
-                writer,
-                child,
-            },
-        );
-    }
+    map.insert(
+        id,
+        PtySession {
+            cwd,
+            master: pty.master,
+            writer,
+            child,
+        },
+    );
+    drop(map);
 
     let reader_sessions = Arc::clone(&sessions);
     std::thread::spawn(move || {
@@ -131,9 +125,11 @@ pub fn terminal_open(
                 }
             }
         }
+        // EOF: drop the session from the map (presence == live) and reap the
+        // child so no zombie or master fd outlives the shell.
         if let Ok(mut map) = reader_sessions.lock() {
-            if let Some(session) = map.get_mut(&id) {
-                session.alive = false;
+            if let Some(mut session) = map.remove(&id) {
+                let _ = session.child.wait();
             }
         }
         let _ = app.emit("terminal://exit", TerminalExit { id });
@@ -143,7 +139,11 @@ pub fn terminal_open(
 }
 
 #[tauri::command]
-pub fn terminal_write(state: State<'_, TerminalMap>, id: u32, data: String) -> Result<(), String> {
+pub async fn terminal_write(
+    state: State<'_, TerminalMap>,
+    id: u32,
+    data: String,
+) -> Result<(), String> {
     let mut map = state.0.lock().map_err(|_| "terminal state poisoned")?;
     let session = map
         .get_mut(&id)
@@ -155,7 +155,7 @@ pub fn terminal_write(state: State<'_, TerminalMap>, id: u32, data: String) -> R
 }
 
 #[tauri::command]
-pub fn terminal_resize(
+pub async fn terminal_resize(
     state: State<'_, TerminalMap>,
     id: u32,
     cols: u16,
@@ -177,10 +177,11 @@ pub fn terminal_resize(
 }
 
 #[tauri::command]
-pub fn terminal_close(state: State<'_, TerminalMap>, id: u32) -> Result<(), String> {
+pub async fn terminal_close(state: State<'_, TerminalMap>, id: u32) -> Result<(), String> {
     let mut map = state.0.lock().map_err(|_| "terminal state poisoned")?;
     if let Some(mut session) = map.remove(&id) {
         let _ = session.child.kill();
+        let _ = session.child.wait();
     }
     Ok(())
 }
@@ -190,6 +191,7 @@ pub fn shutdown_all(map: &TerminalMap) {
     if let Ok(mut sessions) = map.0.lock() {
         for (_, mut session) in sessions.drain() {
             let _ = session.child.kill();
+            let _ = session.child.wait();
         }
     }
 }
@@ -199,12 +201,16 @@ pub fn shutdown_all(map: &TerminalMap) {
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::*;
+    use crate::platform::{terminal_launch_spec, TerminalOs};
     use std::sync::mpsc;
     use std::time::Duration;
 
     #[test]
     fn pty_roundtrip_echo_expands_term_from_spec() {
-        let spec = crate::platform::terminal_launch("/tmp");
+        // Serialize against the env-mutating launcher tests, and use an
+        // explicit shell so the spec is deterministic (no $SHELL read).
+        let _guard = crate::platform::TEST_ENV_LOCK.lock().unwrap();
+        let spec = terminal_launch_spec(TerminalOs::MacOs, Some("/bin/zsh"), "/tmp", None);
         let pty = native_pty_system()
             .openpty(PtySize {
                 rows: 24,

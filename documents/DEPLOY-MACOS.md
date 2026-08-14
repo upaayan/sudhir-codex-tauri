@@ -147,6 +147,9 @@ flow first. Do not remove quarantine from any broader path.
 17. Press Command-O; the native folder picker opens.
 18. Quit the app, then check `ps aux | grep -i zsh` (or the login shell) for
    shells left behind by the terminal panel; none should remain.
+19. Drag the terminal panel to its maximum height while a diagnostic banner or
+   an approval card is visible. The composer must remain fully visible (the
+   terminal shrinks first; it may not go below 220 px).
 
 Generated images and MCP screenshot image blocks are delivered by app-server
 JSON-RPC and rendered as data URLs; display does not require filesystem

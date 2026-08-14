@@ -45,6 +45,14 @@ export function TerminalPanel({ visible, projectPath, height, onHeightChange }: 
   const fitRef = useRef<FitAddon | null>(null);
   const termIdRef = useRef<number | null>(null);
   const listenReadyRef = useRef<Promise<void> | null>(null);
+  // Between terminal_open being issued and its id arriving, the Rust reader
+  // thread may already emit; queue those events and flush once the id is
+  // claimed, so the first chunk (or an immediate exit) is never dropped.
+  const awaitingIdRef = useRef(false);
+  const pendingRef = useRef<{ outputs: string[]; exits: Set<number> }>({
+    outputs: [],
+    exits: new Set(),
+  });
   const [error, setError] = useState<string | null>(null);
   const [exited, setExited] = useState(false);
   const [attachNonce, setAttachNonce] = useState(0);
@@ -77,12 +85,20 @@ export function TerminalPanel({ visible, projectPath, height, onHeightChange }: 
         const output = await listen<TerminalOutputPayload>("terminal://output", (event) => {
           if (event.payload.id === termIdRef.current && termRef.current) {
             termRef.current.write(base64ToBytes(event.payload.data));
+          } else if (awaitingIdRef.current) {
+            const queue = pendingRef.current.outputs;
+            queue.push(event.payload.data);
+            if (queue.length > 256) {
+              queue.shift();
+            }
           }
         });
         const exit = await listen<{ id: number }>("terminal://exit", (event) => {
           registry.markExited(event.payload.id);
           if (event.payload.id === termIdRef.current) {
             setExited(true);
+          } else if (awaitingIdRef.current) {
+            pendingRef.current.exits.add(event.payload.id);
           }
         });
         if (disposed) {
@@ -117,6 +133,8 @@ export function TerminalPanel({ visible, projectPath, height, onHeightChange }: 
       fontSize: 12.5,
       fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, monospace',
       scrollback: 4000,
+      // Must match .terminal-panel's surface colors in app.css (xterm paints
+      // its own canvas, so the pair cannot share a token).
       theme: {
         background: "#0f1117",
         foreground: "#d7dae0",
@@ -130,6 +148,9 @@ export function TerminalPanel({ visible, projectPath, height, onHeightChange }: 
     // stops xterm emitting ^J/^O to the PTY but the event still bubbles to
     // the window listener that handles the toggle.
     term.attachCustomKeyEventHandler((event) => {
+      if (event.type !== "keydown") {
+        return true;
+      }
       if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey) {
         const key = event.key.toLowerCase();
         if (key === "j" || event.code === "KeyJ" || key === "o" || event.code === "KeyO") {
@@ -153,11 +174,25 @@ export function TerminalPanel({ visible, projectPath, height, onHeightChange }: 
     void (async () => {
       await listenReadyRef.current;
       try {
+        awaitingIdRef.current = true;
         const id = await registry.open(projectPath);
         if (disposed) {
+          awaitingIdRef.current = false;
           return;
         }
         termIdRef.current = id;
+        // Flush anything the reader emitted before the id arrived.
+        awaitingIdRef.current = false;
+        const pending = pendingRef.current;
+        for (const chunk of pending.outputs) {
+          term.write(base64ToBytes(chunk));
+        }
+        pending.outputs.length = 0;
+        if (pending.exits.has(id)) {
+          registry.markExited(id);
+          setExited(true);
+        }
+        pending.exits.clear();
         const session = registry.get(projectPath);
         if (session?.exited) {
           setExited(true);
@@ -170,6 +205,9 @@ export function TerminalPanel({ visible, projectPath, height, onHeightChange }: 
           }
         });
       } catch (openError) {
+        awaitingIdRef.current = false;
+        pendingRef.current.outputs.length = 0;
+        pendingRef.current.exits.clear();
         if (!disposed) {
           setError(String(openError));
         }
@@ -260,9 +298,6 @@ export function TerminalPanel({ visible, projectPath, height, onHeightChange }: 
       aria-label="Terminal"
     >
       <div className="terminal-resize-handle" onPointerDown={startDrag} />
-      {!projectPath ? (
-        <div className="terminal-notice">Select a project to open a terminal.</div>
-      ) : null}
       {error ? (
         <div className="terminal-notice" role="alert">
           <span className="terminal-notice-text">{error}</span>

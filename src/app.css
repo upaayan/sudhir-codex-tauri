@@ -482,12 +482,14 @@ body {
   color: var(--text-dim);
 }
 
-/* Terminal panel: deliberately dark in both themes (Alamelu behavior). A flex
-   item between transcript and composer; flex: 0 0 auto so a short window
-   squeezes the transcript, never the terminal below its floor. */
+/* Terminal panel: deliberately dark in both themes (Alamelu behavior; surface
+   colors are mirrored in the xterm theme object in terminal-panel.tsx). A flex
+   item between transcript and composer; flex-shrink 1 with the min-height
+   floor means a short window (or a diagnostic banner / approval card) squeezes
+   the terminal down to 220px before the composer loses a pixel. */
 .terminal-panel {
   position: relative;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   min-height: 220px;
   display: flex;
   flex-direction: column;
@@ -676,6 +678,19 @@ body {
 .shortcut-tooltip-wrap:has(:focus-visible) .shortcut-tooltip {
   opacity: 1;
   transform: translateX(-50%);
+}
+
+/* The rightmost tooltip would center past the window edge (and be clipped by
+   the non-scrolling body), so it right-aligns to its icon instead. */
+.main-header-actions .shortcut-tooltip-wrap:last-child .shortcut-tooltip {
+  left: auto;
+  right: 0;
+  transform: translateY(-2px);
+}
+
+.main-header-actions .shortcut-tooltip-wrap:last-child:hover .shortcut-tooltip,
+.main-header-actions .shortcut-tooltip-wrap:last-child:has(:focus-visible) .shortcut-tooltip {
+  transform: none;
 }
 
 .main-header-title {

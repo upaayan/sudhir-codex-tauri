@@ -88,6 +88,8 @@ export function App() {
   const [unseenThreads, setUnseenThreads] = useState<ReadonlySet<string>>(() => new Set());
   const selectedThreadIdRef = useRef<string | null>(null);
   selectedThreadIdRef.current = state.selectedThreadId;
+  const selectedProjectRef = useRef<string | null>(null);
+  selectedProjectRef.current = state.selectedProjectBackendPath;
   const [themePreference, setThemePreference] = useState<ThemePreference>(() =>
     parseThemePreference(localStorage.getItem(THEME_STORAGE_KEY)));
   const [sidebarHidden, setSidebarHidden] = useState(
@@ -478,8 +480,12 @@ export function App() {
           void handleAddProject();
           break;
         case "terminal":
-          event.preventDefault();
-          setTerminalOpen((open) => !open);
+          // Same gate as the topbar button: no project, no terminal (and no
+          // persisted armed state).
+          if (selectedProjectRef.current) {
+            event.preventDefault();
+            setTerminalOpen((open) => !open);
+          }
           break;
       }
     };
