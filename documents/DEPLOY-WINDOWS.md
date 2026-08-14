@@ -457,7 +457,43 @@ To roll back:
 WSL state and `sudhir-codex` are unaffected. Do not stop, reinstall, or delete
 the persistent gateway as part of desktop rollback.
 
-## Current verified baseline (2026-08-07)
+## Current verified baseline (2026-08-08)
+
+These values identify the installation from which the next Windows update must
+start:
+
+```text
+reviewed commit:        fcc78cf (Round 3 Codex-parity UI + experimentalApi capability, main)
+installer S3:           s3://sudhir-windows-relay/artifacts/Sudhir-Codex-Tauri-gha-windows-x64-round3-fcc78cf.exe
+installer SHA-256:      85f136de37e2af12650a23adb2623781760318b8e18f3b89f8f23c431fe35c32
+raw build EXE S3:       s3://sudhir-windows-relay/artifacts/raw/sudhir-codex-tauri-round3-fcc78cf.exe
+installed EXE SHA-256:  b575848f9d26a5f884da59f65899dbaf7c39968e8daa6b38317095d403aaab60
+rollback installer:     C:\Users\Asus\SudhirCodexTauriBackups\ (pre-update-20260808-191050 dir) + s3 uiux-20260807.exe
+rollback SHA-256:       91c67bdbb50433002847b0097f0bd9de2ae36a75caa73e10bfe59f25bcefc087 (prior installed)
+pre-update backup:      C:\Users\Asus\SudhirCodexTauriBackups\pre-update-20260808-191050\
+display/product version: 0.1.0
+Authenticode:           NotSigned (expected and owner-approved)
+```
+
+**Full NSIS marker-derived hash proof ran this round** (the GHA raw-exe artifact from the
+2026-08-07 workflow fix is now available): raw marker `__TAURI_BUNDLE_TYPE_VAR_UNK`, installed
+marker `__TAURI_BUNDLE_TYPE_VAR_NSS`, and the derived expected hash equals the actual installed
+hash exactly (`b575848f…`). All stages passed 2026-08-08: artifact preflight (installer + raw
+proof), inspect/backup (prior baseline `91c67bdb…` confirmed and backed up), stop (nothing
+running), bounded NSIS install (exit 0), registry/shortcut/version/signature/marker/hash
+verification, first launch (hidden WSL child with the exact app-server command; the launch
+also started the gateway, which had been down — now pid 3724), and WSL runtime health
+(one `app-server --stdio` process; config default `model_reasoning_effort = "max"`,
+`service_tier = "priority"`). App left open for owner testing.
+
+Owner interactive checklist (screen-access items): the eleven Round-3 features, plus the
+standing WebView2 checks — nested scroll inside the Activity box must not scroll-chain the
+transcript, and the composer footer must wrap cleanly (not clip) at a ~900px window. Access
+pill: pick "Read only" and confirm a write is refused/asked (the backend enforcement and the
+`experimentalApi` capability requirement were proven by the Mac three-probe check; the
+Windows backend is the same `sudhir-codex` binary).
+
+## Previous verified baseline (2026-08-07)
 
 These values identify the installation from which the next Windows update must
 start:
