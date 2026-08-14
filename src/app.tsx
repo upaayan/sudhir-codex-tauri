@@ -44,6 +44,12 @@ import {
 import { summarizeActivityEntries } from "./activity-summary.ts";
 import { InteractionRequest, type PendingRequest } from "./components/interaction-request.tsx";
 import { ProjectThreadSidebar } from "./components/project-thread-sidebar.tsx";
+import {
+  PanelRightIcon,
+  shortcutLabel,
+  SidebarToggleIcon,
+  TopbarToggle,
+} from "./components/topbar.tsx";
 import { ThemePicker } from "./components/theme-picker.tsx";
 import { UsagePanel } from "./components/usage-panel.tsx";
 import {
@@ -55,6 +61,8 @@ import {
 
 const MESSAGE_EVENT = "app-server://message";
 const EXIT_EVENT = "app-server://exit";
+const SIDEBAR_HIDDEN_KEY = "sudhir-codex.layout.sidebarHidden";
+const SIDE_PANEL_HIDDEN_KEY = "sudhir-codex.layout.sidePanelHidden";
 
 export function App() {
   const [state, dispatch] = useReducer(stateReducer, undefined, createInitialState);
@@ -69,6 +77,12 @@ export function App() {
   selectedThreadIdRef.current = state.selectedThreadId;
   const [themePreference, setThemePreference] = useState<ThemePreference>(() =>
     parseThemePreference(localStorage.getItem(THEME_STORAGE_KEY)));
+  const [sidebarHidden, setSidebarHidden] = useState(
+    () => localStorage.getItem(SIDEBAR_HIDDEN_KEY) === "1",
+  );
+  const [sidePanelHidden, setSidePanelHidden] = useState(
+    () => localStorage.getItem(SIDE_PANEL_HIDDEN_KEY) === "1",
+  );
   const rpcRef = useRef<RpcClient | null>(null);
   const pendingResolvers = useRef(
     new Map<string | number, (outcome: ServerRequestHandlerResult) => void>(),
@@ -307,6 +321,33 @@ export function App() {
       void invoke("shutdown_app_server").catch(() => undefined);
     };
   }, [dispatch, loadModels, loadUsage]);
+
+  useEffect(() => {
+    localStorage.setItem(SIDEBAR_HIDDEN_KEY, sidebarHidden ? "1" : "0");
+  }, [sidebarHidden]);
+
+  useEffect(() => {
+    localStorage.setItem(SIDE_PANEL_HIDDEN_KEY, sidePanelHidden ? "1" : "0");
+  }, [sidePanelHidden]);
+
+  // ⌘B / Ctrl+B toggles the sidebar, ⌘U / Ctrl+U the usage panel.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.shiftKey || event.altKey) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      if (key === "b") {
+        event.preventDefault();
+        setSidebarHidden((hidden) => !hidden);
+      } else if (key === "u") {
+        event.preventDefault();
+        setSidePanelHidden((hidden) => !hidden);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem(
@@ -580,8 +621,14 @@ export function App() {
     workingStatus = rows[rows.length - 1]?.row.label ?? "Working…";
   }
 
+  const shellClassName = [
+    "app-shell",
+    sidebarHidden ? "app-shell-no-sidebar" : "",
+    sidePanelHidden ? "app-shell-no-panel" : "",
+  ].filter(Boolean).join(" ");
+
   return (
-    <div className="app-shell">
+    <div className={shellClassName}>
       <ProjectThreadSidebar
         state={state}
         projectThreads={projectThreads}
@@ -593,14 +640,31 @@ export function App() {
         onSelectThread={handleSelectThread}
       />
       <main className="main-area">
-        {selectedThread ? (
-          <header className="main-header">
-            <span className="main-header-title">{selectedThreadTitle ?? "Untitled thread"}</span>
-            {selectedProjectName ? (
-              <span className="main-header-project">{selectedProjectName}</span>
-            ) : null}
-          </header>
-        ) : null}
+        <header className="main-header">
+          <span className="main-header-title">
+            {selectedThread ? (selectedThreadTitle ?? "Untitled thread") : "Sudhir Codex"}
+          </span>
+          {selectedThread && selectedProjectName ? (
+            <span className="main-header-project">{selectedProjectName}</span>
+          ) : null}
+          <div className="main-header-actions">
+            <TopbarToggle
+              label="Toggle sidebar"
+              shortcut={shortcutLabel("B")}
+              onClick={() => setSidebarHidden((hidden) => !hidden)}
+            >
+              <SidebarToggleIcon />
+            </TopbarToggle>
+            <TopbarToggle
+              label="Toggle usage panel"
+              shortcut={shortcutLabel("U")}
+              active={!sidePanelHidden}
+              onClick={() => setSidePanelHidden((hidden) => !hidden)}
+            >
+              <PanelRightIcon />
+            </TopbarToggle>
+          </div>
+        </header>
         {state.diagnostic && (
           <div className="diagnostic-banner" role="alert">
             <pre>{state.diagnostic}</pre>
