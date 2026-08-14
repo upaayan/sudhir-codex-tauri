@@ -5,6 +5,7 @@ use tokio::sync::Mutex;
 
 mod app_server;
 mod platform;
+mod terminal;
 
 #[cfg(test)]
 mod attachment_tests {
@@ -164,6 +165,7 @@ fn attachment_kind_for_path(path: &Path) -> &'static str {
 pub fn run() {
     tauri::Builder::default()
         .manage(AppServerState(Mutex::new(None)))
+        .manage(terminal::TerminalMap::default())
         .invoke_handler(tauri::generate_handler![
             spawn_app_server,
             write_app_server_line,
@@ -172,10 +174,17 @@ pub fn run() {
             pick_project_folder,
             pick_attachment_files,
             prepare_attachment_paths,
+            terminal::terminal_open,
+            terminal::terminal_write,
+            terminal::terminal_resize,
+            terminal::terminal_close,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 let app = window.app_handle().clone();
+                if let Some(terminals) = app.try_state::<terminal::TerminalMap>() {
+                    terminal::shutdown_all(&terminals);
+                }
                 tauri::async_runtime::spawn(async move {
                     if let Some(state) = app.try_state::<AppServerState>() {
                         let process = state.0.lock().await.take();

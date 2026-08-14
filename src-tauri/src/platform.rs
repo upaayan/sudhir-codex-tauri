@@ -45,6 +45,83 @@ pub fn app_server_launch() -> ChildLaunchSpec {
     }
 }
 
+/// Interactive-terminal launch: what shell to spawn inside the PTY.
+///
+/// Unlike [`ChildLaunchSpec`] this carries `process_cwd` (the OS working
+/// directory — `None` on Windows, where the project path is a Linux path and
+/// `--cd` conveys it inside WSL) and `remove_env` (vars dropped from the
+/// inherited environment).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TerminalLaunchSpec {
+    pub program: String,
+    pub args: Vec<String>,
+    /// Extra environment variables set on top of the inherited environment.
+    pub env: Vec<(String, String)>,
+    /// Variables removed from the inherited environment.
+    pub remove_env: Vec<String>,
+    /// OS working directory for the spawned process.
+    pub process_cwd: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TerminalOs {
+    MacOs,
+    Windows,
+}
+
+/// Pure spec builder — both arms compile and are asserted by `cargo test` on
+/// every platform; the `#[cfg]` wrappers below pick the arm and read the real
+/// environment at runtime.
+pub fn terminal_launch_spec(
+    os: TerminalOs,
+    shell: Option<&str>,
+    cwd: &str,
+    parent_wslenv: Option<&str>,
+) -> TerminalLaunchSpec {
+    let term = ("TERM".to_string(), "xterm-256color".to_string());
+    let remove_env = vec!["TERMINFO".to_string(), "TERMINFO_DIRS".to_string()];
+    match os {
+        TerminalOs::MacOs => TerminalLaunchSpec {
+            program: shell.unwrap_or("/bin/zsh").to_string(),
+            args: vec!["-l".to_string()],
+            env: vec![term],
+            remove_env,
+            process_cwd: Some(cwd.to_string()),
+        },
+        TerminalOs::Windows => {
+            // WSLENV entries are colon-separated NAME/flags; `/u` passes the
+            // Win32 value into WSL. Append to any existing list, never clobber.
+            let wslenv = match parent_wslenv {
+                Some(existing) if !existing.is_empty() => format!("{existing}:TERM/u"),
+                _ => "TERM/u".to_string(),
+            };
+            TerminalLaunchSpec {
+                program: "wsl.exe".to_string(),
+                args: vec!["--cd".to_string(), cwd.to_string()],
+                env: vec![
+                    term,
+                    ("WSL_UTF8".to_string(), "1".to_string()),
+                    ("WSLENV".to_string(), wslenv),
+                ],
+                remove_env,
+                process_cwd: None,
+            }
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub fn terminal_launch(cwd: &str) -> TerminalLaunchSpec {
+    let shell = std::env::var("SHELL").ok();
+    terminal_launch_spec(TerminalOs::MacOs, shell.as_deref(), cwd, None)
+}
+
+#[cfg(target_os = "windows")]
+pub fn terminal_launch(cwd: &str) -> TerminalLaunchSpec {
+    let wslenv = std::env::var("WSLENV").ok();
+    terminal_launch_spec(TerminalOs::Windows, None, cwd, wslenv.as_deref())
+}
+
 /// True when a Windows host path is already a WSL UNC path.
 #[cfg(any(target_os = "windows", test))]
 pub fn is_wsl_unc_path(path: &str) -> bool {
@@ -168,6 +245,63 @@ mod tests {
         assert!(spec
             .env
             .contains(&("WSL_UTF8".to_string(), "1".to_string())));
+    }
+
+    #[test]
+    fn macos_terminal_spec_uses_login_shell_with_term_and_cwd() {
+        let spec = terminal_launch_spec(
+            TerminalOs::MacOs,
+            Some("/opt/homebrew/bin/fish"),
+            "/Users/owner/proj",
+            None,
+        );
+        assert_eq!(spec.program, "/opt/homebrew/bin/fish");
+        assert_eq!(spec.args, ["-l"]);
+        assert_eq!(
+            spec.env,
+            [("TERM".to_string(), "xterm-256color".to_string())]
+        );
+        assert_eq!(spec.remove_env, ["TERMINFO", "TERMINFO_DIRS"]);
+        assert_eq!(spec.process_cwd.as_deref(), Some("/Users/owner/proj"));
+    }
+
+    #[test]
+    fn macos_terminal_spec_falls_back_to_zsh_without_shell() {
+        let spec = terminal_launch_spec(TerminalOs::MacOs, None, "/Users/owner/proj", None);
+        assert_eq!(spec.program, "/bin/zsh");
+    }
+
+    #[test]
+    fn windows_terminal_spec_uses_wsl_cd_with_no_process_cwd() {
+        let spec = terminal_launch_spec(TerminalOs::Windows, None, "/home/owner/proj", None);
+        assert_eq!(spec.program, "wsl.exe");
+        assert_eq!(spec.args, ["--cd", "/home/owner/proj"]);
+        assert_eq!(
+            spec.process_cwd, None,
+            "a Linux path is not a valid Win32 cwd"
+        );
+        assert!(spec
+            .env
+            .contains(&("TERM".to_string(), "xterm-256color".to_string())));
+        assert!(spec
+            .env
+            .contains(&("WSL_UTF8".to_string(), "1".to_string())));
+        assert!(spec
+            .env
+            .contains(&("WSLENV".to_string(), "TERM/u".to_string())));
+    }
+
+    #[test]
+    fn windows_terminal_spec_appends_term_to_existing_wslenv_with_colon() {
+        let spec = terminal_launch_spec(
+            TerminalOs::Windows,
+            None,
+            "/home/owner/proj",
+            Some("FOO/p:BAR"),
+        );
+        assert!(spec
+            .env
+            .contains(&("WSLENV".to_string(), "FOO/p:BAR:TERM/u".to_string())));
     }
 
     #[test]
