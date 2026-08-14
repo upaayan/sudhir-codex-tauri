@@ -206,9 +206,15 @@ pub async fn convert_host_path_to_backend(path: &str) -> Result<String, String> 
 mod tests {
     use super::*;
 
+    /// The two macOS launcher tests mutate shared process env vars; cargo runs
+    /// tests in parallel threads, so they must serialize or they race.
+    #[cfg(target_os = "macos")]
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[cfg(target_os = "macos")]
     #[test]
     fn macos_launcher_defaults_to_home_local_bin() {
+        let _guard = ENV_LOCK.lock().unwrap();
         std::env::set_var("HOME", "/Users/owner");
         std::env::remove_var("SUDHIR_CODEX_TAURI_APP_SERVER");
         let spec = app_server_launch();
@@ -221,6 +227,7 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn macos_launcher_honors_test_override() {
+        let _guard = ENV_LOCK.lock().unwrap();
         std::env::set_var("SUDHIR_CODEX_TAURI_APP_SERVER", "/tmp/fake-sudhir-codex");
         let spec = app_server_launch();
         assert_eq!(spec.program, "/tmp/fake-sudhir-codex");

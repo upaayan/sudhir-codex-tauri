@@ -135,6 +135,18 @@ flow first. Do not remove quarantine from any broader path.
 12. Open Usage and confirm account and thread figures render.
 13. Close and relaunch. The app-server child must stop and restart while the
    persistent gateway remains running.
+14. With a project selected, press Command-J (or the topbar terminal icon).
+   The terminal panel opens with a shell prompt at the project directory.
+   This must be tested on the installed Finder-launched bundle — `tauri dev`
+   inherits the developer shell's `TERM` and cannot prove this.
+15. In that terminal run `clear`, then open and quit `vim`. Both must work
+   (proves `TERM=xterm-256color` reaches the shell).
+16. On a thread that produced file changes, press Command-D (or the changes
+   icon). The Changes panel opens as a right column with colorized diffs; the
+   usage rail hides while it is open and returns when it closes.
+17. Press Command-O; the native folder picker opens.
+18. Quit the app, then check `ps aux | grep -i zsh` (or the login shell) for
+   shells left behind by the terminal panel; none should remain.
 
 Generated images and MCP screenshot image blocks are delivered by app-server
 JSON-RPC and rendered as data URLs; display does not require filesystem

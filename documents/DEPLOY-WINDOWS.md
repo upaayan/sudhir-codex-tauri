@@ -435,6 +435,19 @@ bridge are excluded from this release.
    authoritative proof for those interaction families.
 10. Close and relaunch; the app-server child restarts cleanly and the WSL
    distribution and persistent gateway are untouched.
+11. With a WSL project selected, press Ctrl+J (or the topbar terminal icon).
+   The terminal panel opens with a WSL shell prompt at the project directory
+   (`wsl.exe --cd`).
+12. In that terminal run `clear`, then open and quit `vim`. Both must work
+   (proves `TERM=xterm-256color` propagates via `WSLENV`).
+13. In the terminal confirm Ctrl+D and Ctrl+U reach the shell (Ctrl+D exits a
+   `python3` REPL; Ctrl+U clears the current line) — they must NOT toggle app
+   panels while the terminal has focus.
+14. Confirm Ctrl+J toggles the terminal closed and open again WITHOUT
+   injecting a stray newline into the shell (the prompt must not advance).
+15. With focus outside the terminal, press Ctrl+D on a thread that produced
+   file changes. The Changes panel opens as a right column with colorized
+   diffs; the usage rail hides while it is open and returns when it closes.
 
 ## Replacement and rollback
 

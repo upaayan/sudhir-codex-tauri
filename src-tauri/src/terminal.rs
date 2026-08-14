@@ -193,3 +193,72 @@ pub fn shutdown_all(map: &TerminalMap) {
         }
     }
 }
+
+// Real PTY round-trip through the exact launch spec: proves spawn, cwd, and
+// TERM propagation without the UI. macOS only — the Windows arm needs WSL.
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::*;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    #[test]
+    fn pty_roundtrip_echo_expands_term_from_spec() {
+        let spec = crate::platform::terminal_launch("/tmp");
+        let pty = native_pty_system()
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("openpty");
+        let mut command = CommandBuilder::new(&spec.program);
+        command.args(&spec.args);
+        for (key, value) in &spec.env {
+            command.env(key, value);
+        }
+        for key in &spec.remove_env {
+            command.env_remove(key);
+        }
+        if let Some(process_cwd) = &spec.process_cwd {
+            command.cwd(process_cwd);
+        }
+        let mut child = pty.slave.spawn_command(command).expect("spawn shell");
+        drop(pty.slave);
+
+        let mut writer = pty.master.take_writer().expect("writer");
+        let mut reader = pty.master.try_clone_reader().expect("reader");
+        writer
+            .write_all(b"echo roundtrip-$TERM; exit\n")
+            .expect("write");
+
+        let (sender, receiver) = mpsc::channel::<String>();
+        std::thread::spawn(move || {
+            let mut collected = String::new();
+            let mut buffer = [0u8; 4096];
+            loop {
+                match reader.read(&mut buffer) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        collected.push_str(&String::from_utf8_lossy(&buffer[..n]));
+                        if collected.contains("roundtrip-xterm-256color") {
+                            break;
+                        }
+                    }
+                }
+            }
+            let _ = sender.send(collected);
+        });
+
+        let collected = receiver
+            .recv_timeout(Duration::from_secs(20))
+            .expect("shell produced output before the deadline");
+        assert!(
+            collected.contains("roundtrip-xterm-256color"),
+            "TERM did not expand; output was: {collected}"
+        );
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+}
