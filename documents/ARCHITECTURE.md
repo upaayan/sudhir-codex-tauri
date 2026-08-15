@@ -163,6 +163,45 @@ attachment. The composer accepts image/document picker selections and drag/drop.
 User messages, final answers, and generated images remain visible; per-turn
 tool calls, reasoning, commentary, command output, file changes, MCP
 screenshots, and other activity begin inside one closed Activity disclosure.
+
+**Alamelu-Pi presentation (2026-08-14, commits `4bd93f0` and
+`92cbed5..3148fbb`).** Assistant replies are unboxed: open text on the page
+background inside a centered 920 px reading column with a 760 px measure and
+Alamelu's rhythm (grid gap, heading scale, overflow guards); user messages are
+quiet right-aligned bubbles. The always-visible header carries five small icon
+toggles with CSS-only mouseover/focus tooltips showing their shortcuts (⌘ on
+macOS, Ctrl on Windows): sidebar (**B**), terminal (**J**), changes (**D**),
+open folder (**O**), usage panel (**U**). Shortcuts are table-driven
+(`src/shortcuts.ts`, matching `key` and `code`); while focus is inside the
+terminal only terminal and open-folder are intercepted, so Ctrl+D/U/B reach
+the shell.
+
+- **Changes panel** (`src/components/diff-panel.tsx`): a right grid column
+  (`clamp(300px, 34%, 400px)`) that is a pure view over the selected thread's
+  `fileChange` items — one chronological group per item, no merging, lines
+  colorized via `src/file-changes.ts` and the `--diff-add`/`--diff-del`
+  theme tokens. Opening it hides the usage rail by class derivation only
+  (the stored ⌘U preference is never written); the ThemePicker inside that
+  rail is therefore unreachable while the panel is open (accepted).
+- **Terminal panel** (`src/components/terminal-panel.tsx`, xterm.js 6): a
+  flex item between transcript and composer, dark surface in both themes,
+  drag-resizable between a 220 px floor and `max(220, innerHeight - 240)`.
+  The Rust host `src-tauri/src/terminal.rs` (portable-pty) keeps **one live
+  PTY per project cwd**, enforced under a single map guard so a webview
+  reload re-attaches instead of orphaning a shell; output flows over one
+  shared `terminal://output` `{id, data}` event (base64) that the panel
+  subscribes to — and awaits — before its first `terminal_open`, with an
+  id-tagged pending queue so no first chunk or immediate exit is lost.
+  Launch spec (`platform.rs::terminal_launch_spec`, pure and tested for both
+  OS arms): macOS `$SHELL -l` (fallback `/bin/zsh`) with the project path as
+  cwd; Windows `wsl.exe --cd <backendPath>` with `WSL_UTF8=1` and `TERM/u`
+  appended to `WSLENV`. Both arms inherit the parent env, set
+  `TERM=xterm-256color`, and drop `TERMINFO`/`TERMINFO_DIRS`. Sessions are
+  killed and reaped (outside the map mutex) on close and at window close
+  alongside the app-server; direct children only — descendants of the shell
+  may outlive the app (owner-parked scope item).
+- Layout state (`sudhir-codex.layout.{sidebarHidden,sidePanelHidden,diffOpen,
+  terminalOpen,terminalHeight}`) persists in localStorage.
 While a selected thread has an active turn, the composer remains enabled with
 `Thinking…`, `Steer`, and `Interrupt` controls; otherwise its idle prompt is
 `Type your request…`. The textarea grows upward with its measured content to
@@ -183,8 +222,11 @@ settings screen, no backend bundling, no direct gateway HTTP access, no
 automatic installation or upgrading of `sudhir-codex`/WSL/WebView2, no
 updater, no background service, no tray, no notifications, no telemetry, no
 crash reporting, no cloud sync, no account management, no repository/file
-browser, no terminal, no git staging UI, no worktrees, no MCP app widgets, no
-audio attachments, no provider billing dashboards, no notarization or Windows
+browser, no git staging UI, no worktrees, no MCP app widgets, no
+audio attachments, no terminal tabs / multiple terminals per project, no
+terminal takeover mode or scrollback replay buffer, no diff-panel file
+watching or git integration (the terminal and changes panels shipped
+2026-08-14 are exactly the Alamelu-Pi ports described above and no more), no provider billing dashboards, no notarization or Windows
 code-signing, no Windows browser control or browser-native-host installation,
 no GitHub Releases publishing, no Intel macOS, no Windows ARM, no Linux
 desktop, and no non-default WSL distribution selection.

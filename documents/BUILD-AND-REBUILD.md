@@ -20,6 +20,17 @@ Frontend dependencies are pinned exactly in `package.json`; Rust dependencies
 are caret-constrained in `src-tauri/Cargo.toml` and pinned by the committed
 `src-tauri/Cargo.lock` and `pnpm-lock.yaml`.
 
+Since the 2026-08-14 Alamelu-Pi port the frontend depends on `@xterm/xterm`
+and `@xterm/addon-fit` (exact pins) for the terminal panel, and the Rust
+crate on `portable-pty` (openpty on macOS, ConPTY on Windows) and `base64`
+for the PTY host in `src-tauri/src/terminal.rs`. Both lockfiles must be
+committed together with any dependency change — the GHA workflow installs
+with `--frozen-lockfile` and fails otherwise. `cargo test` includes a real
+PTY round-trip on macOS (spawns `/bin/zsh -l` through the exact launch spec
+and asserts `TERM=xterm-256color`); it is `#[cfg(target_os = "macos")]` and
+does not run on the Windows CI job, where the WSL terminal is proven at the
+owner's Windows smoke instead.
+
 ## Repository
 
 - Public repository: `https://github.com/upaayan/sudhir-codex-tauri`
