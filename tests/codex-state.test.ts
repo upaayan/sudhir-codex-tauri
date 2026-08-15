@@ -744,3 +744,46 @@ test("reducer accepts empty action list shape without crashing", () => {
   const state = stateReducer(createInitialState(), action);
   assert.equal(state.selectedThreadId, null);
 });
+
+test("a stale one-off diagnostic clears on the next successful hydrate, but a disconnect banner survives", () => {
+  let state = createInitialState();
+  state = stateReducer(state, { type: "connection/status", connected: true, diagnostic: null });
+  // A thread resume fails (e.g. it already has an active writer): banner appears.
+  state = stateReducer(state, {
+    type: "connection/status",
+    connected: true,
+    diagnostic: "failed to resume thread: RpcError: thread t1 already has an active writer",
+  });
+  assert.match(state.diagnostic ?? "", /active writer/);
+  // Starting/selecting another thread hydrates successfully: the stale banner must go.
+  state = stateReducer(state, { type: "thread/hydrate", thread: thread("t2") });
+  assert.equal(state.diagnostic, null);
+
+  // But a genuine connection-loss banner is NOT masked by a hydrate.
+  state = stateReducer(state, {
+    type: "connection/status",
+    connected: false,
+    diagnostic: "app-server exited with code 1",
+  });
+  state = stateReducer(state, { type: "thread/hydrate", thread: thread("t3") });
+  assert.equal(state.diagnostic, "app-server exited with code 1");
+});
+
+test("a stale one-off diagnostic also clears when a turn starts on the current thread", () => {
+  let state = createInitialState();
+  state = stateReducer(state, { type: "connection/status", connected: true, diagnostic: null });
+  state = stateReducer(state, { type: "thread/hydrate", thread: thread("t1") });
+  state = stateReducer(state, {
+    type: "connection/status",
+    connected: true,
+    diagnostic: "failed to name thread: RpcError: boom",
+  });
+  state = stateReducer(state, {
+    type: "notification",
+    threadId: "t1",
+    turnId: "turn-9",
+    method: "turn/started",
+    payload: { threadId: "t1", turn: { id: "turn-9" } },
+  });
+  assert.equal(state.diagnostic, null);
+});

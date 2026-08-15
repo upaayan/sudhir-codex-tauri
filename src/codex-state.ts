@@ -409,6 +409,11 @@ export function stateReducer(state: AppState, action: AppAction): AppState {
       }
       return {
         ...next,
+        // A successful hydrate proves the connection works: clear any one-off
+        // banner left by an earlier failure (e.g. "failed to resume thread"),
+        // which otherwise stayed on screen until restart. A real
+        // connection-loss banner (connected === false) is left alone.
+        diagnostic: next.connected ? null : next.diagnostic,
         threadsBy: {
           ...next.threadsBy,
           [thread.id]: {
@@ -584,6 +589,9 @@ function applyNotification(
     case "turn/started":
       return {
         ...next,
+        // A turn starting also proves the connection works; clear a stale
+        // one-off banner here too (same rule as thread/hydrate).
+        diagnostic: next.connected ? null : next.diagnostic,
         threadsBy: {
           ...next.threadsBy,
           [threadId]: { ...thread, turnId, turnStatus: "inProgress", turnError: null },
