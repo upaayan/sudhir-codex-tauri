@@ -470,7 +470,39 @@ To roll back:
 WSL state and `sudhir-codex` are unaffected. Do not stop, reinstall, or delete
 the persistent gateway as part of desktop rollback.
 
-## Current verified baseline (2026-08-14)
+## Current verified baseline (2026-08-15, evening)
+
+These values identify the installation from which the next Windows update must
+start:
+
+```text
+reviewed commit:        af79423 (fix: stale one-off diagnostic banner clears on next successful hydrate/turn start; main)
+installer S3:           s3://sudhir-windows-relay/artifacts/Sudhir-Codex-Tauri-gha-windows-x64-banner-af79423.exe
+installer SHA-256:      34d86c3445b86ca702941857a6f4d48454b87a404a896574ac2ab27eb81738ce
+raw build EXE S3:       s3://sudhir-windows-relay/artifacts/raw/sudhir-codex-tauri-banner-af79423.exe
+raw build EXE SHA-256:  98e4b30b08cf971edf0d22767086bc7b0f1be5eca4020f4822e689f79dac029c
+installed EXE SHA-256:  116f5f72f26a7ab11f50e0e67f26308a7d8abd8a1c844bd96c7931f13c57a3d1
+rollback installer:     C:\Users\Asus\SudhirCodexTauriBackups\Sudhir-Codex-Tauri-gha-windows-x64-uiuxport-3148fbb.exe
+rollback SHA-256:       604dcabe8db03f74008e1d3f47d16ba757e10b9e7986a2fe572efec1d025da59 (prior installer; prior installed exe d870ed51…)
+pre-update backup:      C:\Users\Asus\SudhirCodexTauriBackups\pre-update-20260815-225430\
+display/product version: 0.1.0
+Authenticode:           NotSigned (expected and owner-approved)
+GHA run:                31897348303 (native-build, platform=all, macOS + Windows green)
+```
+
+All ten relay stages passed 2026-08-15 (IST ~22:54–22:57): artifact preflight
+(installer + raw + rollback hashes verified on the box); inspect/backup (prior
+baseline `d870ed51…` confirmed and copied, copy hash verified); stop (no
+instance); bounded NSIS install (exit 0); registry/shortcut/version/signature
+verification; NSIS marker-derived hash proof (derived expected hash equals
+actual installed hash `116f5f72…` exactly); first launch (hidden WSL child with
+the exact app-server command); graceful shutdown; relaunch (app left open, pid
+16780); WSL runtime health (gateway pid 287, exactly one `app-server --stdio`).
+
+Owner interactive check for this round: click a thread that is busy elsewhere
+(banner appears), then select or start another thread — the banner must clear.
+
+## Previous verified baseline (2026-08-14)
 
 These values identify the installation from which the next Windows update must
 start:
